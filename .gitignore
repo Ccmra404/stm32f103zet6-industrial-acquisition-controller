@@ -1,0 +1,30 @@
+# Editable EDA project files
+IMAGE/
+*.epro2
+*.eprj2
+*.epru
+
+# PCB fabrication files
+Gerber/
+gerber/
+PickAndPlace/
+*.gbr
+*.drl
+
+# Build outputs
+build/
+Debug/
+Release/
+*.hex
+*.bin
+*.map
+
+# Local secrets and settings
+.env
+secrets.h
+.vscode/
+.idea/
+
+# System files
+Thumbs.db
+Desktop.ini
