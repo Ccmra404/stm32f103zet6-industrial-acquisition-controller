@@ -1,13 +1,22 @@
 # 基于STM32F103ZET6与ESP32-S3的工业采集控制终端
 
 <p align="center">
-  <strong>支持高精度模拟量采集、模拟量输出、隔离IO、隔离RS485和双MCU并行架构</strong>
+  <strong>双MCU并行架构 · 高精度模拟量采集 · 标准工业模拟输出 · 隔离通信与隔离IO</strong>
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/MCU-STM32F103ZET6-1f4e79" alt="STM32F103ZET6">
+  <img src="https://img.shields.io/badge/Wireless-ESP32--S3-2d7f72" alt="ESP32-S3">
+  <img src="https://img.shields.io/badge/ADC-ADS1256-c46210" alt="ADS1256">
+  <img src="https://img.shields.io/badge/Output-0--10V%20%2F%204--20mA-1f4e79" alt="Analog Output">
+  <img src="https://img.shields.io/badge/Bus-Isolated%20RS485-2d7f72" alt="RS485">
 </p>
 
 <p align="center">
   <a href="#项目简介">项目简介</a> ·
+  <a href="#项目速览">项目速览</a> ·
   <a href="#项目功能">项目功能</a> ·
-  <a href="#项目优化">项目优化</a> ·
+  <a href="#核心亮点">核心亮点</a> ·
   <a href="#系统结构">系统结构</a> ·
   <a href="#硬件规格">硬件规格</a> ·
   <a href="#硬件设计图">硬件设计图</a> ·
@@ -23,7 +32,20 @@
 
 硬件设计包含工业电源、主控最小系统、ESP32-S3、八路光耦输入与八路继电器输出、隔离RS485通信、ADS1256高精度模拟量采集，以及0到10V和4到20mA模拟量输出。
 
-项目基于参考工业控制板架构重新设计主控和主要电路，主控更换为STM32F103ZET6，并重新规划了电源、模拟采集、输出、隔离通信和MCU接口。
+项目通过双MCU分工将实时控制与联网显示解耦，STM32侧可以独立完成采集、判断和执行，ESP32-S3侧可以专注显示、网络和远程交互。
+
+## 项目速览
+
+| 项目 | 设计内容 |
+| --- | --- |
+| 主控架构 | STM32F103ZET6实时采集 + ESP32-S3联网显示 |
+| 模拟输入 | ADS1256八通道24位ADC，ADR421精密基准 |
+| 模拟输出 | 0到10V电压输出、4到20mA电流输出 |
+| 数字隔离 | TLP291-4八路光耦输入 |
+| 继电器输出 | ULN2803驱动八路继电器 |
+| 现场通信 | TD541S485H隔离RS485接口 |
+| 工业电源 | 24V输入、5V/3.3V电源域、TP5400电池路径 |
+| 设计资料 | 7页原理图导出图与完整硬件设计说明 |
 
 ## 项目功能
 
@@ -38,7 +60,7 @@
 - **工业电源输入**：支持24V输入、5V中间电源、3.3V数字电源和电池输入。
 - **板间通信**：STM32与ESP32-S3之间提供UART业务链路。
 
-## 项目优化
+## 核心亮点
 
 ### 双MCU并行架构
 
@@ -280,14 +302,6 @@ Documentation/
 | Web看板 | 增加实时曲线、报警记录和历史查询 |
 | 远程升级 | 增加ESP32-S3 OTA和参数配置 |
 | 长期稳定性 | 增加连续运行、断电恢复和网络恢复测试 |
-
-## 参考与致谢
-
-本项目在工业控制板接口规划、模拟量采集和电源架构方面参考了以下开源工程：
-
-- [STM32F407 PLC开源工程](https://oshwhub.com/m_zc/stm32f407_plc_20260104-kai-yuan-2)
-
-本项目在此基础上重新设计了主控及主要外围电路。
 
 ## 参考资料
 
