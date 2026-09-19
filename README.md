@@ -200,6 +200,7 @@ PCB 布局展示主要器件、接口端子、电源区域和输出继电器的�
 | [IO 与接口规划](Documentation/io-map.md) | STM32 与 ESP32-S3 的完整引脚分配 |
 | [软件架构](Software/README.md) | STM32、ESP32-S3、任务划分和模块接口 |
 | [板间协议](Software/PROTOCOL.md) | UART 帧、消息类型、命令和错误码 |
+| [CubeMX 配置清单](Software/CUBEMX.md) | 时钟、外设、GPIO、DMA 和 FreeRTOS 配置顺序 |
 | [项目术语](CONTEXT.md) | 现场侧、控制器侧、通道和模块等统一术语 |
 | `Documentation/render_architecture.py` | 重新生成系统架构、数据流和接口拓扑图 |
 | `Documentation/images/` | PCB 布局、系统框图和 8 页原理图 |

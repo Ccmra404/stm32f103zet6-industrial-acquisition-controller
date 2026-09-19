@@ -168,4 +168,4 @@ Firmware/
 7. 接入 MQTT、WebSocket、音频和 OTA。
 8. 执行断网、掉电、CRC 错误和命令重试测试。
 
-板间帧格式和消息定义见[板间协议](PROTOCOL.md)。
+板间帧格式和消息定义见[板间协议](PROTOCOL.md)。CubeMX 的引脚、时钟、DMA 和 FreeRTOS 配置见 [STM32CubeMX 配置清单](CUBEMX.md)。
