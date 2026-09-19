@@ -1,7 +1,7 @@
 # 基于 STM32F103ZET6 与 ESP32-S3 的工业采集控制终端
 
 <p align="center">
-  <strong>STM32 处理实时采集与控制，ESP32-S3 负责桥接、联网和远程交互</strong>
+  <strong>STM32 处理实时采集与控制，ESP32-S3 负责桥接并预留联网和远程交互</strong>
 </p>
 
 <p align="center">
@@ -16,14 +16,14 @@
 
 这是一套面向工业现场采集与控制的双处理器硬件方案。STM32F103ZET6 承担实时任务，包括 8 路 24 位模拟采集、PT100 或 PT1000 温度采集、8 路隔离数字输入、8 路继电器输出、2 路工业模拟输出、参数存储和隔离通信。
 
-ESP32-S3-WROOM-1-N16R8 负责 UART 桥接、WiFi、MQTT、配置同步和 OTA。LCD 与音频模块作为可选外设，不参与核心采集控制链路。两个处理器通过 UART1 互联，STM32 上报采集值和设备状态，ESP32-S3 下发配置与控制命令。网络任务不占用 STM32 的硬实时路径。
+ESP32-S3-WROOM-1-N16R8 负责 UART 桥接，并为 WiFi、MQTT、配置同步和 OTA 提供扩展入口。LCD 与音频模块作为可选外设，不参与核心采集控制链路。两个处理器通过 UART1 互联，STM32 上报采集值和设备状态，ESP32-S3 提供配置与控制命令的协议入口。网络任务不占用 STM32 的硬实时路径。
 
 ## 关键配置
 
 | 类别 | 配置 |
 | --- | --- |
 | 实时控制 | STM32F103ZET6，LQFP144，Cortex-M3 |
-| 联网与桥接 | ESP32-S3-WROOM-1-N16R8，UART 桥接、WiFi、MQTT、OTA |
+| 联网与桥接 | ESP32-S3-WROOM-1-N16R8，当前实现 UART 桥接，WiFi、MQTT 和 OTA 为扩展点 |
 | 模拟采集 | ADS1256，8 通道 24 位 ADC；ADR421 提供 2.5V 基准 |
 | 温度采集 | MAX31865ATP+T，支持 PT100 和 PT1000 |
 | 模拟输出 | LM358，提供 0 到 10V 电压输出和 4 到 20mA 电流输出 |
@@ -57,19 +57,21 @@ RS485 使用 TD541S485H，收发方向由 `PA1` 控制。RS232 使用 TDH541S232
 
 STM32 直接连接 ADS1256、MAX31865、EEPROM、数字输入、继电器和现场总线。它保留采样、报警和控制路径，网络异常时仍可独立运行。
 
-STM32 与 ESP32-S3 之间的 UART 协议使用固定帧头、版本、长度、序号和 CRC。ESP32-S3 接收遥测和事件，发送控制命令并等待 ACK。LCD 和音频模块为可选外设，不影响核心桥接和采集控制。
+STM32 与 ESP32-S3 之间的 UART 协议使用固定帧头、版本、长度、序号和 CRC。ESP32-S3 接收遥测和事件，并提供控制命令与 ACK 的桥接入口。LCD 和音频模块为可选外设，不影响核心桥接和采集控制。
 
-## 系统设计
+## 硬件架构
 
-### 系统架构
+硬件分为现场侧、保护与隔离、控制器侧、应用与网络侧。现场信号先经过滤波、TVS、光耦或隔离收发器，再进入 STM32。ESP32-S3 位于应用与网络侧，只通过 UART1 请求采集和控制服务。
+
+### 硬件系统架构
 
 <p align="center">
   <a href="Documentation/images/arch-system.webp">
-    <img src="Documentation/images/arch-system.webp" width="100%" alt="系统架构图">
+    <img src="Documentation/images/arch-system.webp" width="100%" alt="硬件系统架构图">
   </a>
 </p>
 
-### 数据流
+### 硬件数据流
 
 <p align="center">
   <a href="Documentation/images/arch-data-flow.webp">
@@ -85,7 +87,33 @@ STM32 与 ESP32-S3 之间的 UART 协议使用固定帧头、版本、长度、�
   </a>
 </p>
 
-## 软件实现
+## 软件架构
+
+软件由 STM32 实时固件、ESP32-S3 桥接固件和共享协议模块组成。STM32 是设备状态的唯一写入方，`device_state` 负责保存一致快照。ESP32-S3 通过 UART1 接收状态、维护在线判断，并提供命令发送入口。
+
+### 软件系统架构
+
+<p align="center">
+  <a href="Documentation/images/sw-architecture.webp">
+    <img src="Documentation/images/sw-architecture.webp" width="100%" alt="软件系统架构图">
+  </a>
+</p>
+
+### 任务与数据流
+
+<p align="center">
+  <a href="Documentation/images/sw-task-flow.webp">
+    <img src="Documentation/images/sw-task-flow.webp" width="100%" alt="软件任务和数据流图">
+  </a>
+</p>
+
+### 板间协议流程
+
+<p align="center">
+  <a href="Documentation/images/sw-protocol-flow.webp">
+    <img src="Documentation/images/sw-protocol-flow.webp" width="100%" alt="板间协议和命令流程图">
+  </a>
+</p>
 
 ### STM32 实时固件
 
@@ -99,7 +127,7 @@ STM32 使用 HAL、FreeRTOS 和 CMSIS-RTOS V2。当前任务分为：
 | `rtdTask` | MAX31865 温度读取 |
 | `bridgeTask` | UART 协议、遥测、事件、命令和 ACK |
 
-采集、控制、故障和配置由 `device_state` 统一管理，任务之间通过 mutex 获取一致快照。
+采集、控制、故障和配置由 `device_state` 统一管理，任务之间通过 mutex 获取一致快照。监控任务以 `50ms` 周期更新电源值，采集任务以 `100ms` 周期读取 ADS1256，温度任务以 `500ms` 周期读取 MAX31865，桥接任务以 `10ms` 循环处理接收队列、事件和周期帧。
 
 ### ESP32-S3 桥接固件
 
@@ -107,11 +135,11 @@ ESP32-S3 使用 ESP-IDF 6.1，通过 UART1 连接 STM32：
 
 | 任务 | 职责 |
 | --- | --- |
-| `uart_rx` | 接收帧并按字节解析 |
-| `heartbeat` | 发送 HELLO 和心跳，检查 STM32 在线状态 |
-| `command_router` | 命令发送、确认和重试入口 |
+| `uart_rx` | 以优先级 8 接收帧并按字节解析 |
+| `heartbeat` | 以优先级 6 发送 HELLO 和心跳，连续 3 秒无有效帧时判断 STM32 离线 |
+| `command_router` | 以优先级 6 提供命令发送入口，远程业务队列尚未接入 |
 
-LCD 和音频暂不初始化，板间协议不声明这两项能力。
+当前固件完成遥测接收、在线判断和 ACK 解析。WiFi、MQTT、OTA、LCD 和音频不初始化，保留为后续扩展点。
 
 ### 构建
 
@@ -135,7 +163,7 @@ idf.py build
 
 ### 实时控制与网络任务分离
 
-ADC、光耦输入、继电器和现场总线都直接连接 STM32。ESP32-S3 不参与硬实时控制，只处理显示、网络和远程服务。
+ADC、光耦输入、继电器和现场总线都直接连接 STM32。ESP32-S3 不参与硬实时控制，只负责桥接，并为显示、网络和远程服务保留扩展入口。
 
 ### 模拟链路的基准与抗干扰
 
@@ -249,5 +277,5 @@ PCB 布局展示主要器件、接口端子、电源区域和输出继电器的�
 | [CubeMX 配置清单](Software/CUBEMX.md) | 时钟、外设、GPIO、DMA 和 FreeRTOS 配置顺序 |
 | [固件说明](Firmware/README.md) | STM32 与 ESP32-S3 的构建、接线和功能范围 |
 | [项目术语](CONTEXT.md) | 现场侧、控制器侧、通道和模块等统一术语 |
-| `Documentation/render_architecture.py` | 重新生成系统架构、数据流和接口拓扑图 |
-| `Documentation/images/` | PCB 布局、系统框图和 8 页原理图 |
+| `Documentation/render_architecture.py` | 重新生成硬件和软件架构图 |
+| `Documentation/images/` | PCB 布局、硬件架构、软件架构和 8 页原理图 |
