@@ -16,9 +16,19 @@ build/
 Debug/
 Release/
 Documentation/.render/
+Firmware/stm32/MDK-ARM/stm32_industrial_controller/
+Firmware/stm32/MDK-ARM/*.uvguix.*
+Firmware/stm32/MDK-ARM/*.uvoptx
+Firmware/esp32/sdkconfig.old
+Firmware/esp32/managed_components/
 *.hex
 *.bin
 *.map
+*.axf
+*.crf
+*.o
+*.d
+*.htm
 
 # Local secrets and settings
 .env

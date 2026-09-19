@@ -1,0 +1,13 @@
+idf_component_register(
+    SRCS
+        "app_main.c"
+        "../../shared/protocol/bridge_protocol.c"
+    INCLUDE_DIRS
+        "."
+        "../../shared/protocol"
+    PRIV_REQUIRES
+        esp_driver_gpio
+        esp_driver_uart
+        esp_timer
+        nvs_flash
+)
