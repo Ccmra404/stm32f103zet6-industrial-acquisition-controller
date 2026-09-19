@@ -15,6 +15,7 @@ PickAndPlace/
 build/
 Debug/
 Release/
+Documentation/.render/
 *.hex
 *.bin
 *.map

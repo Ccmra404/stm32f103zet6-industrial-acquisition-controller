@@ -35,34 +35,33 @@
 
 ## 系统架构
 
-```text
-现场模拟信号
-    │
-    ▼
-输入调理与滤波
-    │
-    ▼
-ADS1256 24 位 ADC ── SPI2 ──┐
-                            │
-PT100 或 PT1000 ─ MAX31865 ─ SPI3
-                            │
-八路光耦输入 ──────────────┤
-                            ▼
-                ┌─────────────────────┐
-                │ STM32F103ZET6       │
-                │ 实时采集、控制、报警 │
-                │ EEPROM、电源监测     │
-                └──────────┬──────────┘
-                           │ UART
-                           ▼
-                ┌─────────────────────┐
-                │ ESP32-S3            │
-                │ LCD、WiFi、MQTT、OTA │
-                └──────────┬──────────┘
-                           │
-                           ▼
-                     浏览器或云平台
-```
+<p align="center">
+  <a href="Documentation/images/arch-system.webp">
+    <img src="Documentation/images/arch-system.webp" width="100%" alt="系统架构图">
+  </a>
+</p>
+
+现场信号经过保护、隔离和信号调理后进入 STM32。STM32 完成实时采集、报警判断、继电器控制和现场通信。ESP32-S3 通过 UART 获取设备状态，负责 LCD、音频、WiFi、MQTT 和 OTA。
+
+### 数据流
+
+<p align="center">
+  <a href="Documentation/images/arch-data-flow.webp">
+    <img src="Documentation/images/arch-data-flow.webp" width="100%" alt="采集、控制和远程交互数据流图">
+  </a>
+</p>
+
+采集数据和报警状态向上传递，配置和输出控制向下传递。网络断开后，STM32 继续执行本地采样、报警和继电器安全策略。
+
+### 通信拓扑
+
+<p align="center">
+  <a href="Documentation/images/arch-io-topology.webp">
+    <img src="Documentation/images/arch-io-topology.webp" width="100%" alt="STM32 与 ESP32-S3 通信拓扑图">
+  </a>
+</p>
+
+SPI 连接 ADS1256、MAX31865 和 LCD。I2C 连接 EEPROM、外部扩展和音频 Codec。UART 用于 STM32 与 ESP32-S3、RS485 和 RS232。CAN 用于多节点现场总线。
 
 ## 硬件模块
 
@@ -222,6 +221,7 @@ MAX31865 的 `RTD_P`、`RTD_N` 和 `RTD_FORCE` 现场线各增加一个 `SMBJ5.0
 | [硬件设计说明](Documentation/hardware.md) | 电源、主控、模拟链路、隔离接口、温度和存储 |
 | [IO 与接口规划](Documentation/io-map.md) | STM32 与 ESP32-S3 的最终引脚分配 |
 | [项目术语](CONTEXT.md) | 现场侧、控制器侧、通道和模块等统一术语 |
+| `Documentation/render_architecture.py` | 根据文档定义重新生成三张架构图 |
 | `Documentation/images/` | 8 页原理图导出图片 |
 
 ## 后续计划
