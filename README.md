@@ -143,6 +143,16 @@ MAX31865 的 `RTD_P`、`RTD_N` 和 `RTD_FORCE` 现场线各增加一个 `SMBJ5.0
 | 8 | SCL | ESP_I2C_SCL |
 | 9 | SDA | ESP_I2C_SDA |
 
+## PCB 布局
+
+<p align="center">
+  <a href="Documentation/images/pcb-layout.webp">
+    <img src="Documentation/images/pcb-layout.webp" width="100%" alt="PCB 布局图">
+  </a>
+</p>
+
+布局图展示主要器件、接口端子、电源区域和输出继电器的位置关系。详细电路以原理图页面为准。
+
 ## 原理图
 
 工程包含 8 个原理图页面。点击图片可以查看大图。
