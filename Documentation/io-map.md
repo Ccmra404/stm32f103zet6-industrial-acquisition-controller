@@ -17,8 +17,8 @@
 | DAC1 | PA4 | DAC_OUT1 | 模拟量输出 |
 | DAC2 | PA5 | DAC_OUT2 | 模拟量输出 |
 | 状态灯 | PA8 | GPIO | 板载状态指示 |
-| ESP32 接收 | PA9 | USART1_RX | 接收 ESP32 UART |
-| ESP32 发送 | PA10 | USART1_TX | 发送到 ESP32 UART |
+| ESP32 发送 | PA9 | USART1_TX | 发送到 ESP32 UART |
+| ESP32 接收 | PA10 | USART1_RX | 接收 ESP32 UART |
 | CAN 接收 | PA11 | CAN1_RX | 连接 TDH541SCANFD |
 | CAN 发送 | PA12 | CAN1_TX | 连接 TDH541SCANFD |
 | SWDIO | PA13 | SWDIO | 调试口 |

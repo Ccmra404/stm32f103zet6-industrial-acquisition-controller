@@ -73,8 +73,8 @@ APB1 定时器时钟为 72MHz。ADC 预分频使用 `/6`，不要超过 14MHz。
 | 项目 | 配置 |
 | --- | --- |
 | Mode | Asynchronous |
-| TX | `PA10` |
-| RX | `PA9` |
+| TX | `PA9` |
+| RX | `PA10` |
 | Baud rate | 115200 |
 | Word length | 8 bits |
 | Parity | None |
@@ -84,7 +84,7 @@ APB1 定时器时钟为 72MHz。ADC 预分频使用 `/6`，不要超过 14MHz。
 
 主机与 ESP32-S3 之间使用 USART1。协议解析使用 DMA 接收和 IDLE 中断，不在中断里直接解析完整帧。
 
-教程工程默认把 `PA9` 配成 TX、`PA10` 配成 RX。本项目需要反过来设置：`PA9` 为 RX，`PA10` 为 TX。原因是 ESP32-S3 的 `IO17` 连接 STM32 的 `PA9`，ESP32-S3 的 `IO18` 连接 STM32 的 `PA10`。
+教程工程默认把 `PA9` 配成 TX、`PA10` 配成 RX，与当前硬件一致。ESP32-S3 的 `IO18` 连接 STM32 的 `PA9`，ESP32-S3 的 `IO17` 连接 STM32 的 `PA10`。
 
 ### USART2
 
