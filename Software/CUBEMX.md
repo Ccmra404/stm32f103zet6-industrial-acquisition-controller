@@ -6,6 +6,22 @@
 
 使用本地教程工程 `09_usart_rolling_hal` 作为骨架。该工程不包含在当前仓库中。
 
+工程目录、工程名和目标名只能使用 ASCII 字符。不要使用中文、空格或特殊符号。
+
+以下路径会触发 ARMCC 的路径编码问题：
+
+```text
+C:\Users\zalry\Desktop\STM32工业检测
+```
+
+推荐路径：
+
+```text
+C:\Users\zalry\Desktop\stm32-esp32-industrial-acquisition-controller\Firmware\stm32\stm32_industrial_controller
+```
+
+Keil 会使用目标名创建 `Objects` 下的中间目录。目标名包含中文时，编译器无法删除或创建 `*.d` 文件。
+
 该工程已经配置为 `STM32F103ZETx`、LQFP144、8MHz HSE、32.768kHz LSE、72MHz 主频、SWD 和 USART1。复制一份工程后修改，不要直接编辑原教程工程。
 
 ## 待确认问题
