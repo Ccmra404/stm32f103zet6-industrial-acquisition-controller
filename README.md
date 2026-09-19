@@ -61,7 +61,7 @@
 
 <p align="center">
   <a href="Documentation/images/sw-architecture.webp">
-    <img src="Documentation/images/sw-architecture.webp" width="100%" alt="软件系统架构图">
+    <img src="https://raw.githubusercontent.com/Ccmra404/stm32f103zet6-industrial-acquisition-controller/main/Documentation/images/sw-architecture.webp" width="100%" alt="软件系统架构图">
   </a>
 </p>
 
@@ -117,7 +117,7 @@ STM32 是设备状态的唯一写入方。采集任务发布状态，桥接任�
 
 <p align="center">
   <a href="Documentation/images/sw-task-flow.webp">
-    <img src="Documentation/images/sw-task-flow.webp" width="100%" alt="软件任务和数据流图">
+    <img src="https://raw.githubusercontent.com/Ccmra404/stm32f103zet6-industrial-acquisition-controller/main/Documentation/images/sw-task-flow.webp" width="100%" alt="软件任务和数据流图">
   </a>
 </p>
 
@@ -176,7 +176,7 @@ CRC 覆盖 `version` 到 `payload`，不覆盖帧头。所有多字节字段使�
 
 <p align="center">
   <a href="Documentation/images/sw-protocol-flow.webp">
-    <img src="Documentation/images/sw-protocol-flow.webp" width="100%" alt="板间协议和命令流程图">
+    <img src="https://raw.githubusercontent.com/Ccmra404/stm32f103zet6-industrial-acquisition-controller/main/Documentation/images/sw-protocol-flow.webp" width="100%" alt="板间协议和命令流程图">
   </a>
 </p>
 
@@ -188,7 +188,7 @@ CRC 覆盖 `version` 到 `payload`，不覆盖帧头。所有多字节字段使�
 
 <p align="center">
   <a href="Documentation/images/arch-system.webp">
-    <img src="Documentation/images/arch-system.webp" width="100%" alt="硬件系统架构图">
+    <img src="https://raw.githubusercontent.com/Ccmra404/stm32f103zet6-industrial-acquisition-controller/main/Documentation/images/arch-system.webp" width="100%" alt="硬件系统架构图">
   </a>
 </p>
 
@@ -212,13 +212,13 @@ CRC 覆盖 `version` 到 `payload`，不覆盖帧头。所有多字节字段使�
 
 <p align="center">
   <a href="Documentation/images/arch-data-flow.webp">
-    <img src="Documentation/images/arch-data-flow.webp" width="100%" alt="硬件数据流图">
+    <img src="https://raw.githubusercontent.com/Ccmra404/stm32f103zet6-industrial-acquisition-controller/main/Documentation/images/arch-data-flow.webp" width="100%" alt="硬件数据流图">
   </a>
 </p>
 
 <p align="center">
   <a href="Documentation/images/arch-io-topology.webp">
-    <img src="Documentation/images/arch-io-topology.webp" width="100%" alt="硬件接口拓扑图">
+    <img src="https://raw.githubusercontent.com/Ccmra404/stm32f103zet6-industrial-acquisition-controller/main/Documentation/images/arch-io-topology.webp" width="100%" alt="硬件接口拓扑图">
   </a>
 </p>
 
@@ -280,7 +280,7 @@ Documentation/
 
 <p align="center">
   <a href="Documentation/images/pcb-layout.webp">
-    <img src="Documentation/images/pcb-layout.webp" width="100%" alt="PCB 布局图">
+    <img src="https://raw.githubusercontent.com/Ccmra404/stm32f103zet6-industrial-acquisition-controller/main/Documentation/images/pcb-layout.webp" width="100%" alt="PCB 布局图">
   </a>
 </p>
 
@@ -292,14 +292,14 @@ Documentation/
   <tr>
     <td align="center">
       <a href="Documentation/images/sch-power.webp">
-        <img src="Documentation/images/sch-power.webp" width="380" alt="电源设计">
+        <img src="https://raw.githubusercontent.com/Ccmra404/stm32f103zet6-industrial-acquisition-controller/main/Documentation/images/sch-power.webp" width="380" alt="电源设计">
       </a>
       <br>
       <sub>电源</sub>
     </td>
     <td align="center">
       <a href="Documentation/images/sch-stm32.webp">
-        <img src="Documentation/images/sch-stm32.webp" width="380" alt="STM32 主控">
+        <img src="https://raw.githubusercontent.com/Ccmra404/stm32f103zet6-industrial-acquisition-controller/main/Documentation/images/sch-stm32.webp" width="380" alt="STM32 主控">
       </a>
       <br>
       <sub>STM32 主控</sub>
@@ -308,14 +308,14 @@ Documentation/
   <tr>
     <td align="center">
       <a href="Documentation/images/sch-esp32.webp">
-        <img src="Documentation/images/sch-esp32.webp" width="380" alt="ESP32-S3">
+        <img src="https://raw.githubusercontent.com/Ccmra404/stm32f103zet6-industrial-acquisition-controller/main/Documentation/images/sch-esp32.webp" width="380" alt="ESP32-S3">
       </a>
       <br>
       <sub>ESP32-S3</sub>
     </td>
     <td align="center">
       <a href="Documentation/images/sch-dio.webp">
-        <img src="Documentation/images/sch-dio.webp" width="380" alt="光耦输入和继电器输出">
+        <img src="https://raw.githubusercontent.com/Ccmra404/stm32f103zet6-industrial-acquisition-controller/main/Documentation/images/sch-dio.webp" width="380" alt="光耦输入和继电器输出">
       </a>
       <br>
       <sub>光耦输入和继电器输出</sub>
@@ -324,14 +324,14 @@ Documentation/
   <tr>
     <td align="center">
       <a href="Documentation/images/sch-comm.webp">
-        <img src="Documentation/images/sch-comm.webp" width="380" alt="隔离通信">
+        <img src="https://raw.githubusercontent.com/Ccmra404/stm32f103zet6-industrial-acquisition-controller/main/Documentation/images/sch-comm.webp" width="380" alt="隔离通信">
       </a>
       <br>
       <sub>隔离通信</sub>
     </td>
     <td align="center">
       <a href="Documentation/images/sch-ain.webp">
-        <img src="Documentation/images/sch-ain.webp" width="380" alt="模拟量采集">
+        <img src="https://raw.githubusercontent.com/Ccmra404/stm32f103zet6-industrial-acquisition-controller/main/Documentation/images/sch-ain.webp" width="380" alt="模拟量采集">
       </a>
       <br>
       <sub>模拟量采集</sub>
@@ -340,14 +340,14 @@ Documentation/
   <tr>
     <td align="center">
       <a href="Documentation/images/sch-aout.webp">
-        <img src="Documentation/images/sch-aout.webp" width="380" alt="模拟量输出">
+        <img src="https://raw.githubusercontent.com/Ccmra404/stm32f103zet6-industrial-acquisition-controller/main/Documentation/images/sch-aout.webp" width="380" alt="模拟量输出">
       </a>
       <br>
       <sub>模拟量输出</sub>
     </td>
     <td align="center">
       <a href="Documentation/images/sch-monitor-storage.webp">
-        <img src="Documentation/images/sch-monitor-storage.webp" width="380" alt="监测与存储">
+        <img src="https://raw.githubusercontent.com/Ccmra404/stm32f103zet6-industrial-acquisition-controller/main/Documentation/images/sch-monitor-storage.webp" width="380" alt="监测与存储">
       </a>
       <br>
       <sub>监测与存储</sub>
