@@ -108,6 +108,19 @@ LCD 和音频模块属于可选外设，当前固件不初始化它们，也不�
 
 协议定义见 [板间协议](../Software/PROTOCOL.md)。`Firmware/shared/protocol` 同时被 STM32 和 ESP32-S3 编译，避免两端字段布局不一致。
 
+共享协议在主机侧运行回归测试：
+
+```bash
+gcc -std=c11 -Wall -Wextra -Werror \
+  -IFirmware/shared/protocol \
+  Firmware/shared/protocol/bridge_protocol.c \
+  Firmware/tests/protocol_test.c \
+  -o protocol_test
+./protocol_test
+```
+
+测试说明见 [协议测试](tests/README.md)。GitHub Actions 会自动运行协议测试和 ESP32-S3 构建。
+
 ## 当前验证状态
 
 STM32 工程和 ESP32-S3 工程都已通过编译。ADS1256 寄存器、MAX31865 标定参数、继电器时序和现场总线负载仍需要在实物板上验证。

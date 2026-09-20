@@ -1,0 +1,36 @@
+name: build
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  protocol-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Compile protocol tests
+        run: |
+          gcc -std=c11 -Wall -Wextra -Werror \
+            -IFirmware/shared/protocol \
+            Firmware/shared/protocol/bridge_protocol.c \
+            Firmware/tests/protocol_test.c \
+            -o protocol_test
+
+      - name: Run protocol tests
+        run: ./protocol_test
+
+  esp32-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build ESP32-S3 firmware
+        uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: v6.1
+          target: esp32s3
+          path: Firmware/esp32

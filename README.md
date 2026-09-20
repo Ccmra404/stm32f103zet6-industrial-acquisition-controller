@@ -11,6 +11,7 @@
   <img src="https://img.shields.io/badge/Framework-ESP--IDF%206.1-2D7F72" alt="ESP-IDF 6.1">
   <img src="https://img.shields.io/badge/ADC-ADS1256-C46210" alt="ADS1256">
   <img src="https://img.shields.io/badge/Protocol-CRC--16-B14E4A" alt="CRC-16 Protocol">
+  <img src="https://github.com/Ccmra404/stm32f103zet6-industrial-acquisition-controller/actions/workflows/build.yml/badge.svg" alt="Build">
 </p>
 
 <p align="center">
@@ -274,6 +275,7 @@ CRC 覆盖 `version` 到 `payload`，不覆盖帧头。所有多字节字段使�
 | --- | --- | --- | --- |
 | STM32F103ZET6 | Keil MDK | `Firmware/stm32/MDK-ARM/stm32_industrial_controller.uvprojx` | `0 Error(s), 0 Warning(s)` |
 | ESP32-S3 | ESP-IDF 6.1 | `Firmware/esp32` | Build complete |
+| 共享协议 | GCC | `Firmware/tests/protocol_test.c` | GitHub Actions 自动测试 |
 
 构建 STM32 固件：
 
@@ -392,7 +394,8 @@ Documentation/
 - 接入 WiFi、MQTT、WebSocket 和 OTA，完成远程状态发布与固件升级。
 - 增加 LCD 状态页、报警页和参数配置页。
 - 完成 ADS1256、MAX31865 和模拟输出的实板标定。
-- 增加协议测试向量、主机侧单元测试和异常链路测试。
+- 增加 Modbus RTU 寄存器映射和现场设备轮询。
+- 增加看门狗复位、链路故障和控制命令的自动化联调脚本。
 - 评估电池供电、功耗测量和掉电数据保护。
 
 ## 项目资料
@@ -403,6 +406,7 @@ Documentation/
 | [板间协议](Software/PROTOCOL.md) | UART 帧、消息类型、命令和错误码 |
 | [CubeMX 配置清单](Software/CUBEMX.md) | 时钟、外设、GPIO、DMA 和 FreeRTOS 配置 |
 | [固件说明](Firmware/README.md) | 两套固件的构建、接线和功能范围 |
+| [协议测试](Firmware/tests/README.md) | 主机侧帧编解码、CRC 和异常路径测试 |
 | [硬件设计说明](Documentation/hardware.md) | 电源、主控、模拟链路、隔离接口、温度和存储 |
 | [IO 与接口规划](Documentation/io-map.md) | STM32 与 ESP32-S3 的完整引脚分配 |
 | [项目术语](CONTEXT.md) | 现场侧、控制器侧、通道和模块等统一术语 |
