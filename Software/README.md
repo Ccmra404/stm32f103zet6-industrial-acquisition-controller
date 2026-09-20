@@ -25,6 +25,18 @@
 | 网络 | 不直接联网 | WiFi、MQTT 和 OTA 留作扩展 |
 | 板间连接 | UART1 | UART1 |
 
+## FreeRTOS 运行框架
+
+STM32 使用 FreeRTOS 和 CMSIS-RTOS V2。系统节拍为 `1 ms`，开启抢占式调度。任务按实时性设置为 `High`、`AboveNormal` 和 `Normal`。
+
+| 配置 | 值 | 作用 |
+| --- | ---: | --- |
+| `configTICK_RATE_HZ` | `1000` | 提供 1 ms 调度节拍 |
+| `configUSE_PREEMPTION` | `1` | 高优先级任务就绪后立即抢占 |
+| `configUSE_MUTEXES` | `1` | 保护状态快照 |
+| `configUSE_TIMERS` | `1` | 执行继电器脉冲超时 |
+| `configTOTAL_HEAP_SIZE` | `12288` | 为任务、队列、互斥锁和定时器提供动态内存 |
+
 ## 总体结构
 
 ```text
@@ -109,17 +121,25 @@ bridge_uart -> STM32 bridge_uart -> command handler
 
 STM32 使用 CubeMX 生成 HAL 初始化，并配置 FreeRTOS。任务按职责划分，优先级从高到低如下。
 
-| 任务 | 典型周期 | 职责 |
-| --- | --- | --- |
-| `control_task` | 1 ms 到 5 ms | 数字输入消抖、继电器状态机和安全联锁 |
-| `acq_task` | DRDY 触发 | ADS1256 采样、原值校准和状态发布 |
-| `rtd_task` | 100 ms | MAX31865 读取和故障检测 |
-| `bridge_task` | 事件触发 | UART 帧解析、心跳、遥测和命令处理 |
-| `field_task` | 事件触发 | RS485、RS232 和 CAN 数据交换 |
-| `storage_task` | 按请求 | EEPROM 读取、写入和校验 |
-| `monitor_task` | 50 ms | 24V、5V、堆栈和错误计数 |
+| 任务 | FreeRTOS 优先级 | 周期 | 职责 |
+| --- | --- | ---: | --- |
+| `controlTask` | `High` | 5 ms | 数字输入消抖、继电器状态同步和输入事件 |
+| `acqTask` | `High` | 100 ms | ADS1256 八通道采样和状态发布 |
+| `monitorTask` | `AboveNormal` | 50 ms | 24V、5V 监测和状态灯 |
+| `rtdTask` | `AboveNormal` | 500 ms | MAX31865 读取和故障检测 |
+| `bridgeTask` | `Normal` | 10 ms 循环 | UART 帧解析、心跳、遥测、事件和命令处理 |
 
-高优先级任务只做时间敏感工作。EEPROM 写入和网络相关处理放在低优先级任务。
+中断和任务之间通过队列解耦。UART 空闲 DMA 回调只把接收字节投递到 `s_uart_rx_queue`，协议解析和命令处理由 `bridgeTask` 完成。
+
+## 任务间通信
+
+| 机制 | 配置 | 用途 |
+| --- | ---: | --- |
+| `s_uart_rx_queue` | 512 字节 | 在中断和 `bridgeTask` 之间传递 UART 数据 |
+| `s_event_queue` | 16 条消息 | 传递输入变化和继电器变化事件 |
+| `deviceStateMutex` | 普通互斥锁 | 保护统一设备快照 |
+| `osTimerOnce x8` | 8 个 | 继电器脉冲到期后撤销输出 |
+| `portMUX` | ESP32 临界区 | 保护在线状态和最后接收时间 |
 
 ## ESP32-S3 任务
 

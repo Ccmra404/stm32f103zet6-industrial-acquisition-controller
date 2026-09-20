@@ -32,7 +32,7 @@
 
 | 层面 | 当前实现 |
 | --- | --- |
-| 实时软件 | FreeRTOS、CMSIS-RTOS V2、5 个业务任务、ADC DMA、UART DMA 空闲接收、事件队列和继电器脉冲定时器 |
+| 实时软件 | FreeRTOS 1 ms tick、抢占式调度、CMSIS-RTOS V2、5 个业务任务、ADC DMA、UART DMA 空闲接收、事件队列和继电器脉冲定时器 |
 | 桥接软件 | UART1 字节流解析、HELLO、HEARTBEAT、TELEMETRY、EVENT、COMMAND、COMMAND_ACK 和 3 秒离线判断 |
 | 通信协议 | `AA 55` 帧头、版本、消息类型、序号、长度、256 字节载荷和 CRC-16 |
 | 状态管理 | `device_state` 统一保存设备快照，使用 mutex 保证任务读取一致性 |
@@ -65,26 +65,56 @@
   </a>
 </p>
 
-### STM32 实时固件
+### FreeRTOS 调度模型
 
-STM32 使用 HAL、FreeRTOS 和 CMSIS-RTOS V2。任务按实时性和职责拆分：
+STM32 使用 FreeRTOS 和 CMSIS-RTOS V2。系统节拍为 `1 ms`，开启抢占式调度。任务按实时性分为 `High`、`AboveNormal` 和 `Normal`，采集、控制和通信不会串行阻塞在同一个主循环里。
 
-| 任务 | 周期 | 主要工作 |
+| FreeRTOS 配置 | 当前值 | 作用 |
 | --- | ---: | --- |
-| `monitorTask` | 50 ms | 读取 24V 和 5V 电压，刷新状态灯 |
-| `controlTask` | 5 ms | 数字输入消抖、继电器同步和输入变化事件 |
-| `acqTask` | 100 ms | 读取 ADS1256 八通道原始值 |
-| `rtdTask` | 500 ms | 读取 MAX31865 温度并更新故障状态 |
-| `bridgeTask` | 10 ms 循环 | 解析 UART 命令、发送心跳、遥测和事件 |
+| 系统节拍 | `1000 Hz` | 提供 1 ms 时间片，支持毫秒级任务调度 |
+| 抢占策略 | `configUSE_PREEMPTION = 1` | 高优先级任务就绪后立即抢占低优先级任务 |
+| 互斥锁 | `configUSE_MUTEXES = 1` | 保护 `device_state` 状态快照 |
+| 软件定时器 | `configUSE_TIMERS = 1` | 执行 8 路继电器脉冲超时 |
+| 动态内存 | `heap_4`，12 KB | 创建任务、队列、互斥锁和定时器 |
 
-软件层包含以下服务：
+### FreeRTOS 调度与任务通信
 
-- `device_state`：保存电源、模拟输入、温度、数字输入、继电器、模拟输出和故障位图。
-- `relay_output`：上电默认关闭输出，支持位图更新和脉冲控制。
-- `analog_output`：控制 DAC1 和 DAC2，并同步更新状态快照。
-- `config_store`：读写 EEPROM 参数，检查版本和 CRC。
-- `field_comm`：发送 RS485、RS232 和 CAN 数据。
-- 8 个 FreeRTOS 单次定时器：执行继电器脉冲，到期后自动撤销对应输出位。
+<p align="center">
+  <a href="Documentation/images/sw-task-flow.webp">
+    <img src="https://raw.githubusercontent.com/Ccmra404/stm32f103zet6-industrial-acquisition-controller/main/Documentation/images/sw-task-flow.webp" width="100%" alt="FreeRTOS 调度和任务通信图">
+  </a>
+</p>
+
+### STM32 实时任务
+
+| 任务 | FreeRTOS 优先级 | 周期 | 主要工作 |
+| --- | --- | ---: | --- |
+| `controlTask` | `High` | 5 ms | 数字输入消抖、继电器同步和输入变化事件 |
+| `acqTask` | `High` | 100 ms | 读取 ADS1256 八通道原始值 |
+| `monitorTask` | `AboveNormal` | 50 ms | 读取 24V、5V 电压并刷新状态灯 |
+| `rtdTask` | `AboveNormal` | 500 ms | 读取 MAX31865 温度并更新故障状态 |
+| `bridgeTask` | `Normal` | 10 ms 循环 | 协议解析、心跳、遥测、事件和命令处理 |
+
+### 任务间通信
+
+| 机制 | 配置 | 解决的问题 |
+| --- | ---: | --- |
+| `s_uart_rx_queue` | 512 字节 | UART 中断只投递字节，协议解析放到 `bridgeTask` |
+| `s_event_queue` | 16 条消息 | 输入变化事件与遥测解耦，不覆盖历史事件 |
+| `deviceStateMutex` | 普通互斥锁 | 多个任务读写状态时提供一致快照 |
+| `osTimerOnce` | 8 个 | 继电器脉冲到期后自动撤销输出位 |
+| `portMUX` | ESP32 临界区 | 保护在线状态和最后接收时间 |
+
+### 已实现的软件亮点
+
+- 使用 FreeRTOS 抢占式调度，把实时控制任务和网络桥接任务放在不同优先级。
+- 使用 `osDelay()` 实现周期任务，不使用阻塞式忙等。
+- UART 使用 DMA 空闲接收，中断只把字节投递到队列，复杂解析在任务上下文完成。
+- 使用消息队列传递输入事件，事件不会被周期遥测覆盖。
+- 使用互斥锁保护统一状态快照，避免任务读到半更新数据。
+- 使用 8 个一次性软件定时器实现非阻塞继电器脉冲。
+- 使用独立心跳、遥测、事件和 ACK 消息，故障发生时状态不会丢失。
+- 共享协议代码不依赖 HAL、FreeRTOS 或 ESP-IDF，STM32 和 ESP32-S3 使用同一份协议实现。
 
 ### ESP32-S3 桥接固件
 
@@ -112,25 +142,6 @@ STM32 是设备状态的唯一写入方。采集任务发布状态，桥接任�
               v
          bridgeTask
 ```
-
-### 任务与数据流
-
-<p align="center">
-  <a href="Documentation/images/sw-task-flow.webp">
-    <img src="https://raw.githubusercontent.com/Ccmra404/stm32f103zet6-industrial-acquisition-controller/main/Documentation/images/sw-task-flow.webp" width="100%" alt="软件任务和数据流图">
-  </a>
-</p>
-
-上行路径发送采集值、设备状态和事件。下行路径接收继电器、DAC 和配置命令。ESP32-S3 只发送命令，不直接操作 STM32 的 GPIO。
-
-### 软件设计要点
-
-- 实时域和网络域分离，网络扩展失败不影响本地闭环。
-- 任务之间使用状态快照、消息队列、互斥锁和定时器。
-- 遥测、事件和 ACK 使用不同消息类型，事件不会被遥测覆盖。
-- 固件参数包含版本和 CRC，异常配置不会静默写入。
-- UART1 使用 DMA 空闲接收，接收中断只投递字节，协议解析放在任务中。
-- 共享协议代码不使用 HAL、FreeRTOS 或 ESP-IDF API，可在主机侧测试。
 
 ## 通信协议
 
@@ -232,7 +243,7 @@ CRC 覆盖 `version` 到 `payload`，不覆盖帧头。所有多字节字段使�
 - 继电器线圈配置续流回路，上电默认关闭全部输出。
 - ADS1256 使用独立模拟电源，ADR421 基准经过运放缓冲。
 
-## 构建与验证
+## 构建
 
 | 目标 | 工具链 | 工程入口 | 当前结果 |
 | --- | --- | --- | --- |
@@ -255,12 +266,6 @@ idf.py set-target esp32s3
 idf.py build
 idf.py -p COMx flash monitor
 ```
-
-当前验证范围：
-
-- 两套固件均已通过编译。
-- 共享协议包含帧构建、解析、CRC 和消息字段校验。
-- ADS1256 寄存器时序、MAX31865 标定参数、继电器脉冲时间和现场总线负载仍需在实物板上验证。
 
 ### 工程目录
 

@@ -626,86 +626,93 @@ def software_architecture():
 
 
 def software_task_flow():
-    width, height = 1800, 1010
+    width, height = 1800, 1060
     parts = []
     header(
         parts,
         width,
-        "任务与数据流 · 软件运行时",
-        "上行状态和下行命令经过同一套协议，但写入权限和故障降级策略相互独立",
+        "FreeRTOS 调度与任务通信",
+        "1 ms 系统节拍、抢占式调度、任务间队列、互斥锁和软件定时器共同组成实时运行框架",
     )
 
-    columns = [
-        (
-            62,
-            "硬件接口",
-            COLORS["amber"],
-            ["ADS1256 / MAX31865", "数字输入 / 电源 ADC", "继电器 / DAC / EEPROM", "RS485 / RS232 / CAN"],
-        ),
-        (
-            404,
-            "STM32 任务",
-            COLORS["blue"],
-            ["acqTask  100ms", "rtdTask  500ms", "controlTask  5ms", "monitorTask  50ms", "bridgeTask  10ms loop"],
-        ),
-        (
-            746,
-            "状态与协议",
-            COLORS["violet"],
-            ["device_state mutex", "event queue", "bridge_protocol", "UART1  115200 8N1", "CRC-16 / sequence"],
-        ),
-        (
-            1088,
-            "ESP32-S3 任务",
-            COLORS["teal"],
-            ["uart_rx  priority 8", "heartbeat  priority 6", "command_router  priority 6", "telemetry state cache", "3s link timeout"],
-        ),
-        (
-            1430,
-            "应用扩展",
-            COLORS["slate"],
-            ["WiFi / MQTT / OTA", "远程配置与看板", "LCD / 音频", "当前固件未启动"],
-        ),
+    add_rect(parts, 62, 178, 460, 388, COLORS["blue_fill"], radius=22)
+    add_text(parts, 92, 224, "FreeRTOS 调度内核", 30, COLORS["blue"], weight=500)
+    add_badge(parts, 92, 250, "抢占式调度", COLORS["white"], COLORS["blue"], 148)
+    add_badge(parts, 252, 250, "1 ms tick", COLORS["white"], COLORS["blue"], 122)
+    add_list(
+        parts,
+        112,
+        336,
+        [
+            "configUSE_PREEMPTION = 1",
+            "configTICK_RATE_HZ = 1000",
+            "configUSE_MUTEXES = 1",
+            "configUSE_TIMERS = 1",
+            "heap_4 动态内存池 12KB",
+            "CMSIS-RTOS V2 统一 API",
+        ],
+        COLORS["blue"],
+        33,
+        17,
+    )
+
+    add_rect(parts, 550, 178, 700, 388, COLORS["violet_fill"], radius=22)
+    add_text(parts, 580, 224, "任务优先级与执行周期", 30, COLORS["violet"], weight=500)
+    priority_rows = [
+        ("High", "controlTask   5 ms", "acqTask   100 ms", COLORS["red"], COLORS["red_fill"]),
+        ("AboveNormal", "monitorTask   50 ms", "rtdTask   500 ms", COLORS["amber"], COLORS["amber_fill"]),
+        ("Normal", "bridgeTask   10 ms loop", "UART / 事件 / 命令", COLORS["blue"], COLORS["blue_fill"]),
+        ("Timer", "8 个一次性继电器定时器", "到期自动撤销输出位", COLORS["teal"], COLORS["teal_fill"]),
     ]
+    y = 272
+    for priority, left, right, color, fill in priority_rows:
+        add_rect(parts, 580, y, 640, 62, COLORS["white"], COLORS["line"], 13)
+        add_badge(parts, 594, y + 11, priority, fill, color, 132)
+        add_text(parts, 752, y + 27, left, 17, COLORS["ink"], weight=500, font=MONO)
+        add_text(parts, 752, y + 51, right, 16, COLORS["muted"])
+        y += 72
 
-    for x, title, color, lines in columns:
-        add_rect(parts, x, 218, 272, 286, COLORS["white"], COLORS["line"], 18)
-        add_rect(parts, x, 218, 272, 8, color, radius=4)
-        add_text(parts, x + 22, 263, title, 25, COLORS["ink"], weight=500)
-        add_list(parts, x + 34, 308, lines, color, 34, 17)
+    add_rect(parts, 1278, 178, 460, 388, COLORS["teal_fill"], radius=22)
+    add_text(parts, 1308, 224, "任务间通信与同步", 30, COLORS["teal"], weight=500)
+    ipc_items = [
+        ("s_uart_rx_queue", "512 字节接收队列"),
+        ("s_event_queue", "16 条事件消息"),
+        ("deviceStateMutex", "保护统一状态快照"),
+        ("osTimerOnce x8", "继电器脉冲超时"),
+        ("portMUX", "ESP32 在线状态临界区"),
+    ]
+    y = 270
+    for title, detail in ipc_items:
+        add_rect(parts, 1308, y, 400, 52, COLORS["white"], COLORS["line"], 12)
+        add_text(parts, 1328, y + 22, title, 16, COLORS["teal"], weight=500, font=MONO)
+        add_text(parts, 1328, y + 43, detail, 15, COLORS["muted"])
+        y += 58
 
-    add_badge(parts, 304, 176, "上行：数据与状态", COLORS["blue_fill"], COLORS["blue"], 232)
-    for i in range(4):
-        x = 62 + i * 342
-        add_line(parts, x + 276, 348, x + 336, 348, COLORS["blue"], 5, marker=True)
+    add_rect(parts, 62, 610, 1676, 390, COLORS["white"], COLORS["line"], 18)
+    add_text(parts, 92, 655, "运行时路径", 28, COLORS["ink"], weight=500)
+    path_cards = [
+        ("中断与 DMA", COLORS["amber"], ["ADC1 DMA", "UART 空闲 DMA", "RxEventCallback", "只投递数据"]),
+        ("采集与控制任务", COLORS["blue"], ["controlTask 5ms", "acqTask 100ms", "rtdTask 500ms", "monitorTask 50ms"]),
+        ("状态快照", COLORS["violet"], ["device_state", "mutex 加锁", "DeviceState_Get()", "一致副本"]),
+        ("协议桥接", COLORS["teal"], ["bridgeTask", "HEARTBEAT 1s", "TELEMETRY 100ms", "EVENT 队列"]),
+        ("ESP32-S3", COLORS["green"] if "green" in COLORS else COLORS["teal"], ["uart_rx  priority 8", "heartbeat  priority 6", "command_router  priority 6", "portMUX 状态缓存"]),
+    ]
+    x = 94
+    for title, color, lines in path_cards:
+        add_rect(parts, x, 690, 300, 190, COLORS["paper"], COLORS["line"], 15)
+        add_rect(parts, x, 690, 300, 7, color, radius=3)
+        add_text(parts, x + 20, 730, title, 22, COLORS["ink"], weight=500)
+        add_list(parts, x + 32, 770, lines, color, 29, 16)
+        if x < 1394:
+            add_line(parts, x + 306, 785, x + 350, 785, COLORS["blue"], 5, marker=True)
+        x += 350
 
-    add_badge(parts, 1270, 558, "下行：命令与确认", COLORS["amber_fill"], COLORS["amber"], 232)
-    for i in (4, 3, 2, 1):
-        x = 62 + i * 342
-        add_line(parts, x - 6, 636, x - 66, 636, COLORS["amber"], 5, marker=True)
-
-    add_rect(parts, 478, 568, 704, 104, COLORS["teal_fill"], radius=18)
-    add_text(parts, 508, 607, "本地安全闭环", 24, COLORS["teal"], weight=500)
-    add_text(parts, 508, 641, "controlTask 直接读取数字输入并同步继电器，网络中断不影响本地控制。", 18, COLORS["muted"])
-
-    add_rect(parts, 1208, 568, 494, 104, COLORS["white"], COLORS["line"], 18)
-    add_text(parts, 1238, 607, "命令路径", 24, COLORS["ink"], weight=500)
-    add_text(parts, 1238, 641, "COMMAND -> bridgeTask -> 输出或配置 -> COMMAND_ACK", 17, COLORS["muted"])
-
-    add_rect(parts, 62, 710, 1640, 122, COLORS["white"], COLORS["line"], 16)
-    add_text(parts, 92, 749, "周期与超时", 23, COLORS["ink"], weight=500)
-    add_text(parts, 92, 790, "STM32 遥测 100ms", 18, COLORS["blue"])
-    add_text(parts, 334, 790, "双向心跳 1s", 18, COLORS["teal"])
-    add_text(parts, 546, 790, "ESP32 判断 STM32 离线 3s", 18, COLORS["violet"])
-    add_text(parts, 884, 790, "UART 115200 8N1", 18, COLORS["muted"])
-    add_text(parts, 1130, 790, "事件使用独立队列并优先发送", 18, COLORS["amber"])
-
-    add_rect(parts, 62, 866, 1640, 82, COLORS["blue_fill"], radius=16)
+    add_rect(parts, 94, 910, 1594, 62, COLORS["blue_fill"], radius=14)
     add_text(
         parts,
-        92,
-        917,
-        "当前边界：ESP32-S3 已能收遥测、回心跳并解析 ACK；command_router 只建立任务入口，尚未接入远程命令业务。",
+        120,
+        948,
+        "中断只搬运数据，协议解析、状态更新和命令处理都在任务上下文完成，避免长时间占用中断。",
         19,
         COLORS["blue"],
     )
@@ -717,8 +724,8 @@ def software_task_flow():
         svg_document(
             width,
             height,
-            "任务与数据流",
-            "STM32 与 ESP32-S3 的任务周期、数据路径和命令确认路径。",
+            "FreeRTOS 调度与任务通信",
+            "STM32 与 ESP32-S3 的 FreeRTOS 调度、任务优先级、队列、互斥锁和软件定时器。",
             parts,
         ),
     )
