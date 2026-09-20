@@ -121,6 +121,26 @@ void DeviceState_UpdateAnalogOutput(uint8_t channel, uint16_t value)
   }
 }
 
+void DeviceState_UpdateRuntimeDiagnostics(uint32_t task_alive_bits,
+                                          const uint16_t task_stack_free[DEVICE_TASK_COUNT],
+                                          uint32_t uart_rx_dropped,
+                                          uint32_t event_queue_dropped,
+                                          uint32_t watchdog_refresh_count)
+{
+  if (task_stack_free == 0)
+  {
+    return;
+  }
+
+  StateLock();
+  s_state.task_alive_bits = task_alive_bits;
+  memcpy(s_state.task_stack_free, task_stack_free, sizeof(s_state.task_stack_free));
+  s_state.uart_rx_dropped = uart_rx_dropped;
+  s_state.event_queue_dropped = event_queue_dropped;
+  s_state.watchdog_refresh_count = watchdog_refresh_count;
+  StateUnlock();
+}
+
 void DeviceState_ClearFaults(uint16_t fault_mask)
 {
   StateLock();

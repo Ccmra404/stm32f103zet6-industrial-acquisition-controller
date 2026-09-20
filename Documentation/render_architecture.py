@@ -540,11 +540,11 @@ def software_architecture():
     add_text(parts, 92, 255, "FreeRTOS + CMSIS-RTOS V2", 18, COLORS["muted"])
 
     stm_tasks = [
-        ("01", "monitorTask", "50ms 采样 24V / 5V，500ms 状态灯"),
+        ("01", "monitorTask", "50ms 采样电源，检查任务活性并刷新 IWDG"),
         ("02", "controlTask", "5ms 数字输入消抖、继电器同步和事件队列"),
         ("03", "acqTask", "100ms 读取 ADS1256 八通道原始值"),
         ("04", "rtdTask", "500ms 读取 MAX31865 温度"),
-        ("05", "bridgeTask", "解析命令、发送心跳、遥测和事件"),
+        ("05", "bridgeTask", "解析命令、发送心跳、遥测和事件，缓存请求结果"),
     ]
     y = 278
     for index, title, detail in stm_tasks:
@@ -569,7 +569,7 @@ def software_architecture():
     add_list(parts, 848, 366, ["AA 55 帧头", "version / type", "sequence / length", "payload / CRC-16"], COLORS["violet"], 29, 18)
     add_rect(parts, 812, 518, 274, 188, COLORS["white"], COLORS["line"], 16)
     add_text(parts, 838, 556, "消息集合", 23, COLORS["ink"], weight=500)
-    add_list(parts, 848, 599, ["HELLO / HEARTBEAT", "TELEMETRY / EVENT", "COMMAND", "COMMAND_ACK"], COLORS["violet"], 26, 17)
+    add_list(parts, 848, 586, ["HELLO / HEARTBEAT", "TELEMETRY / EVENT", "DIAGNOSTICS", "COMMAND / ACK"], COLORS["violet"], 24, 16)
     add_rect(parts, 812, 728, 274, 164, COLORS["white"], COLORS["line"], 16)
     add_text(parts, 838, 766, "代码复用", 23, COLORS["ink"], weight=500)
     add_list(parts, 848, 809, ["只依赖 C 标准库", "STM32 与 ESP32 同源", "字段布局一致"], COLORS["violet"], 28, 17)
@@ -581,7 +581,7 @@ def software_architecture():
     esp_tasks = [
         ("06", "uart_rx", "优先级 8，读取 UART1 并逐字节解析"),
         ("07", "heartbeat", "优先级 6，发送 HELLO 和心跳，判断 3 秒离线"),
-        ("08", "command_router", "优先级 6，命令发送入口；业务队列待接入"),
+        ("08", "command_router", "优先级 6，UART0 控制台、ACK 匹配和超时重试"),
     ]
     y = 282
     for index, title, detail in esp_tasks:
@@ -595,7 +595,7 @@ def software_architecture():
     add_rect(parts, 1174, 618, 536, 122, COLORS["white"], COLORS["line"], 16)
     add_text(parts, 1200, 655, "状态与命令数据", 23, COLORS["ink"], weight=500)
     add_text(parts, 1200, 688, "s_telemetry 保存最近一次完整遥测。", 17, COLORS["muted"])
-    add_text(parts, 1200, 718, "state lock 保护在线状态和最后接收时间。", 17, COLORS["muted"])
+    add_text(parts, 1200, 718, "command / ack queue 保存命令并等待确认。", 17, COLORS["muted"])
 
     add_rect(parts, 1174, 762, 536, 130, COLORS["white"], COLORS["line"], 16)
     add_text(parts, 1200, 799, "后续应用扩展点", 23, COLORS["violet"], weight=500)
@@ -642,17 +642,19 @@ def software_task_flow():
     add_list(
         parts,
         112,
-        336,
+        324,
         [
             "configUSE_PREEMPTION = 1",
             "configTICK_RATE_HZ = 1000",
             "configUSE_MUTEXES = 1",
             "configUSE_TIMERS = 1",
+            "5 个任务活性监督",
+            "IWDG 4s 看门狗刷新",
             "heap_4 动态内存池 12KB",
             "CMSIS-RTOS V2 统一 API",
         ],
         COLORS["blue"],
-        33,
+        29,
         17,
     )
 
@@ -679,14 +681,15 @@ def software_task_flow():
         ("s_event_queue", "16 条事件消息"),
         ("deviceStateMutex", "保护统一状态快照"),
         ("osTimerOnce x8", "继电器脉冲超时"),
+        ("command / ack queue", "ESP32 命令与确认队列"),
         ("portMUX", "ESP32 在线状态临界区"),
     ]
-    y = 270
+    y = 264
     for title, detail in ipc_items:
-        add_rect(parts, 1308, y, 400, 52, COLORS["white"], COLORS["line"], 12)
+        add_rect(parts, 1308, y, 400, 44, COLORS["white"], COLORS["line"], 12)
         add_text(parts, 1328, y + 22, title, 16, COLORS["teal"], weight=500, font=MONO)
-        add_text(parts, 1328, y + 43, detail, 15, COLORS["muted"])
-        y += 58
+        add_text(parts, 1328, y + 39, detail, 14, COLORS["muted"])
+        y += 50
 
     add_rect(parts, 62, 610, 1676, 390, COLORS["white"], COLORS["line"], 18)
     add_text(parts, 92, 655, "运行时路径", 28, COLORS["ink"], weight=500)
@@ -695,7 +698,7 @@ def software_task_flow():
         ("采集与控制任务", COLORS["blue"], ["controlTask 5ms", "acqTask 100ms", "rtdTask 500ms", "monitorTask 50ms"]),
         ("状态快照", COLORS["violet"], ["device_state", "mutex 加锁", "DeviceState_Get()", "一致副本"]),
         ("协议桥接", COLORS["teal"], ["bridgeTask", "HEARTBEAT 1s", "TELEMETRY 100ms", "EVENT 队列"]),
-        ("ESP32-S3", COLORS["green"] if "green" in COLORS else COLORS["teal"], ["uart_rx  priority 8", "heartbeat  priority 6", "command_router  priority 6", "portMUX 状态缓存"]),
+        ("ESP32-S3", COLORS["teal"], ["console command", "command_router + ACK", "uart_rx  priority 8", "heartbeat  priority 6"]),
     ]
     x = 94
     for title, color, lines in path_cards:
@@ -712,7 +715,7 @@ def software_task_flow():
         parts,
         120,
         948,
-        "中断只搬运数据，协议解析、状态更新和命令处理都在任务上下文完成，避免长时间占用中断。",
+        "中断只搬运数据；任务活性监督通过后才刷新 IWDG，命令重试复用同一请求编号并由 STM32 缓存结果。",
         19,
         COLORS["blue"],
     )
@@ -753,7 +756,7 @@ def software_protocol_flow():
 
     add_line(parts, 610, 230, 1190, 230, COLORS["blue"], 5, marker=True)
     add_line(parts, 1190, 286, 610, 286, COLORS["violet"], 5, marker=True)
-    add_text(parts, 900, 218, "HELLO / HEARTBEAT / TELEMETRY / EVENT", 20, COLORS["blue"], weight=500, anchor="middle")
+    add_text(parts, 900, 218, "HELLO / HEARTBEAT / TELEMETRY / EVENT / DIAG", 19, COLORS["blue"], weight=500, anchor="middle")
     add_text(parts, 900, 316, "HELLO / HEARTBEAT / COMMAND", 20, COLORS["violet"], weight=500, anchor="middle")
 
     add_text(parts, 90, 392, "固定帧结构", 26, COLORS["ink"], weight=500)
@@ -797,11 +800,11 @@ def software_protocol_flow():
     add_text(parts, 960, 591, "命令与确认", 27, COLORS["ink"], weight=500)
     command_steps = [
         ("01", "command_router 建立请求"),
-        ("02", "发送 COMMAND"),
-        ("03", "STM32 bridgeTask 校验参数"),
-        ("04", "执行继电器、DAC 或配置操作"),
-        ("05", "发送 COMMAND_ACK"),
-        ("06", "ESP32 解析结果并更新状态"),
+        ("02", "发送 COMMAND 并等待 ACK"),
+        ("03", "超时后用同一 request_id 重试"),
+        ("04", "STM32 校验参数并查询结果缓存"),
+        ("05", "执行继电器、DAC 或配置操作"),
+        ("06", "返回 ACK 并由 ESP32 更新状态"),
     ]
     y = 640
     for index, step in command_steps:
@@ -810,7 +813,7 @@ def software_protocol_flow():
         if index != "06":
             add_line(parts, 995, y + 8, 995, y + 34, COLORS["amber"], 2)
         y += 38
-    add_text(parts, 966, 874, "当前固件完成命令入口和 ACK 解析，远程业务队列、重试和去重尚未接入。", 17, COLORS["amber"])
+    add_text(parts, 966, 874, "命令重试复用 request_id，STM32 缓存最近 16 条结果并去重。", 17, COLORS["amber"])
 
     add_rect(parts, 90, 924, 1620, 92, COLORS["violet_fill"], radius=16)
     add_text(parts, 120, 962, "协议约定", 22, COLORS["violet"], weight=500)

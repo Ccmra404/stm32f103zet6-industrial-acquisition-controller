@@ -268,6 +268,44 @@ uint16_t BridgeProtocol_BuildTelemetry(uint16_t sequence,
   return BuildFrame(BRIDGE_MSG_TELEMETRY, sequence, payload, sizeof(payload), output, output_size);
 }
 
+uint16_t BridgeProtocol_BuildDiagnostics(uint16_t sequence,
+                                         uint32_t timestamp_ms,
+                                         uint32_t task_alive_bits,
+                                         uint32_t uart_rx_dropped,
+                                         uint32_t event_queue_dropped,
+                                         uint32_t watchdog_refresh_count,
+                                         const uint16_t task_stack_free[BRIDGE_DIAGNOSTIC_TASK_COUNT],
+                                         uint8_t *output,
+                                         uint16_t output_size)
+{
+  uint8_t payload[30];
+  uint16_t offset = 0U;
+  uint8_t index;
+
+  if (task_stack_free == 0)
+  {
+    return 0U;
+  }
+
+  WriteU32Le(&payload[offset], timestamp_ms);
+  offset += 4U;
+  WriteU32Le(&payload[offset], task_alive_bits);
+  offset += 4U;
+  WriteU32Le(&payload[offset], uart_rx_dropped);
+  offset += 4U;
+  WriteU32Le(&payload[offset], event_queue_dropped);
+  offset += 4U;
+  WriteU32Le(&payload[offset], watchdog_refresh_count);
+  offset += 4U;
+  for (index = 0U; index < BRIDGE_DIAGNOSTIC_TASK_COUNT; index++)
+  {
+    WriteU16Le(&payload[offset], task_stack_free[index]);
+    offset += 2U;
+  }
+
+  return BuildFrame(BRIDGE_MSG_DIAGNOSTICS, sequence, payload, sizeof(payload), output, output_size);
+}
+
 uint16_t BridgeProtocol_BuildCommandAck(uint16_t sequence,
                                         uint16_t request_id,
                                         uint16_t command_id,
@@ -383,6 +421,32 @@ bool BridgeProtocol_ParseTelemetry(const BridgeProtocolFrame *frame,
   telemetry->supply_mv[1] = ReadU16Le(&frame->payload[offset]);
   offset += 2U;
   telemetry->fault_bits = ReadU16Le(&frame->payload[offset]);
+  return true;
+}
+
+bool BridgeProtocol_ParseDiagnostics(const BridgeProtocolFrame *frame,
+                                     BridgeProtocolDiagnostics *diagnostics)
+{
+  uint16_t offset = 20U;
+  uint8_t index;
+
+  if ((frame == 0) || (diagnostics == 0) ||
+      (frame->type != BRIDGE_MSG_DIAGNOSTICS) ||
+      (frame->length != 30U))
+  {
+    return false;
+  }
+
+  diagnostics->timestamp_ms = ReadU32Le(&frame->payload[0]);
+  diagnostics->task_alive_bits = ReadU32Le(&frame->payload[4]);
+  diagnostics->uart_rx_dropped = ReadU32Le(&frame->payload[8]);
+  diagnostics->event_queue_dropped = ReadU32Le(&frame->payload[12]);
+  diagnostics->watchdog_refresh_count = ReadU32Le(&frame->payload[16]);
+  for (index = 0U; index < BRIDGE_DIAGNOSTIC_TASK_COUNT; index++)
+  {
+    diagnostics->task_stack_free[index] = ReadU16Le(&frame->payload[offset]);
+    offset += 2U;
+  }
   return true;
 }
 

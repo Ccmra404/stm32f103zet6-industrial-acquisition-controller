@@ -67,6 +67,7 @@ CRC 参数：
 | `0x02` | `HEARTBEAT` | 双向 | 周期上报健康状态 |
 | `0x10` | `TELEMETRY` | STM32 到 ESP32-S3 | 上报采集和输出快照 |
 | `0x11` | `EVENT` | STM32 到 ESP32-S3 | 上报输入变化和继电器变化 |
+| `0x12` | `DIAGNOSTICS` | STM32 到 ESP32-S3 | 上报任务活性、栈余量和错误计数 |
 | `0x20` | `COMMAND` | ESP32-S3 到 STM32 | 请求控制和配置操作 |
 | `0x21` | `COMMAND_ACK` | STM32 到 ESP32-S3 | 返回命令结果 |
 
@@ -151,6 +152,29 @@ CRC 参数：
 
 当前固件实际发送 `0x0001` 和 `0x0002`，其余编码作为扩展接口保留。
 
+## DIAGNOSTICS
+
+| 字段 | 类型 | 数量 | 说明 |
+| --- | --- | ---: | --- |
+| `timestamp_ms` | `uint32` | 1 | STM32 运行时间 |
+| `task_alive_bits` | `uint32` | 1 | 5 个任务的存活位图 |
+| `uart_rx_dropped` | `uint32` | 1 | UART 接收队列丢包计数 |
+| `event_queue_dropped` | `uint32` | 1 | 事件队列丢包计数 |
+| `watchdog_refresh_count` | `uint32` | 1 | IWDG 刷新次数 |
+| `task_stack_free` | `uint16` | 5 | 各任务最小剩余栈空间 |
+
+任务位和栈空间顺序固定为：
+
+```text
+bit 0 / index 0: controlTask
+bit 1 / index 1: acqTask
+bit 2 / index 2: monitorTask
+bit 3 / index 3: rtdTask
+bit 4 / index 4: bridgeTask
+```
+
+当前固件每 5 秒发送一次诊断帧。ESP32-S3 收到后更新状态缓存，并在控制台执行 `status` 时显示。
+
 ## COMMAND
 
 | 字段 | 类型 | 说明 |
@@ -198,9 +222,9 @@ CRC 参数：
 
 ## 命令时序
 
-当前固件完成 `COMMAND` 构建、参数校验、操作执行和 `COMMAND_ACK` 返回。命令超时重试、请求结果缓存和重复请求去重属于后续扩展。
+ESP32-S3 发出命令后等待 500 ms。超时后复用原 `request_id` 重试，最多重试两次。STM32 保存最近 16 个请求结果，收到重复请求时直接返回原结果，不再次执行输出。
 
-ESP32-S3 解析并记录 `COMMAND_ACK`。扩展业务层收到 `OK` 后更新界面，收到错误后显示错误原因，不自行假定命令成功。
+ESP32-S3 使用 `request_id` 和 `command_id` 匹配 `COMMAND_ACK`。收到 `OK` 后更新命令状态，收到错误后显示错误原因，不自行假定命令成功。
 
 ## 链路恢复
 

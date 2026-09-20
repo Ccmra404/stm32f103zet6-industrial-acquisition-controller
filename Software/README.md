@@ -37,6 +37,8 @@ STM32 使用 FreeRTOS 和 CMSIS-RTOS V2。系统节拍为 `1 ms`，开启抢占�
 | `configUSE_TIMERS` | `1` | 执行继电器脉冲超时 |
 | `configTOTAL_HEAP_SIZE` | `12288` | 为任务、队列、互斥锁和定时器提供动态内存 |
 
+`monitorTask` 周期检查 5 个业务任务的存活时间和栈余量。全部任务健康时刷新 IWDG，任一任务超时后停止刷新，让硬件看门狗复位控制器。
+
 ## 总体结构
 
 ```text
@@ -78,9 +80,11 @@ STM32 使用 FreeRTOS 和 CMSIS-RTOS V2。系统节拍为 `1 ms`，开启抢占�
 | --- | --- | --- |
 | `uart_rx` | 读取 UART1 并逐字节解析 | `UartRxTask()` |
 | `heartbeat` | 发送 HELLO 和心跳，判断链路离线 | `HeartbeatTask()` |
-| `command_router` | 提供命令发送任务入口 | `CommandRouterTask()` |
+| `command_router` | 发送命令、等待 ACK、超时重试 | `CommandRouterTask()` |
+| `console` | 解析 UART0 控制台命令 | `ConsoleTask()` |
 | `state cache` | 保存最近一次遥测和在线状态 | `s_telemetry`、`s_state_lock` |
 | `bridge_protocol` | 构建和解析协议帧 | `BridgeProtocol_*()` |
+| `diagnostics` | 任务活性、栈余量和错误计数 | `DIAGNOSTICS` 帧 |
 
 以下模块属于扩展接口，当前固件不初始化：
 
@@ -139,6 +143,8 @@ STM32 使用 CubeMX 生成 HAL 初始化，并配置 FreeRTOS。任务按职责�
 | `s_event_queue` | 16 条消息 | 传递输入变化和继电器变化事件 |
 | `deviceStateMutex` | 普通互斥锁 | 保护统一设备快照 |
 | `osTimerOnce x8` | 8 个 | 继电器脉冲到期后撤销输出 |
+| `s_command_queue` | 8 条命令 | 在控制台和命令路由之间传递请求 |
+| `s_ack_queue` | 8 条确认 | 保存命令结果并结束超时等待 |
 | `portMUX` | ESP32 临界区 | 保护在线状态和最后接收时间 |
 
 ## ESP32-S3 任务
@@ -147,7 +153,8 @@ STM32 使用 CubeMX 生成 HAL 初始化，并配置 FreeRTOS。任务按职责�
 | --- | --- | --- |
 | `uart_rx` | 8 | UART 接收、协议解析和消息分发 |
 | `heartbeat` | 6 | HELLO、心跳和 3 秒离线判断 |
-| `command_router` | 6 | 命令发送入口 |
+| `command_router` | 6 | 命令发送、ACK 匹配和超时重试 |
+| `console` | 4 | UART0 命令行控制和状态查询 |
 
 `uart_rx` 使用独立接收缓冲，协议解析不放在中断中。`heartbeat` 使用临界区保护在线状态和最后接收时间。
 
@@ -158,7 +165,8 @@ STM32 使用 CubeMX 生成 HAL 初始化，并配置 FreeRTOS。任务按职责�
 - UART 无响应时，STM32 继续执行本地控制策略和报警。
 - ADC、温度或电源监测超出范围时产生事件，不静默丢弃。
 - 配置写入包含版本、长度和 CRC。校验失败时恢复默认值。
-- 命令去重、超时重试和请求结果缓存属于后续扩展。
+- ESP32 命令在 500 ms 无 ACK 时复用同一 `request_id` 重试。
+- STM32 缓存最近 16 条请求结果，重复请求不会再次执行输出。
 
 ## 构建目录
 

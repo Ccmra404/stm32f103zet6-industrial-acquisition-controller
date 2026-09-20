@@ -17,6 +17,7 @@
 #define LED_PERIOD_MS 500U
 #define HEARTBEAT_PERIOD_MS 1000U
 #define TELEMETRY_PERIOD_MS 100U
+#define DIAGNOSTICS_PERIOD_MS 5000U
 #define SUPPLY_PERIOD_MS 50U
 #define CONTROL_PERIOD_MS 5U
 #define ACQ_PERIOD_MS 100U
@@ -24,6 +25,13 @@
 #define UART_RX_BUFFER_SIZE 256U
 #define UART_RX_QUEUE_LENGTH 512U
 #define EVENT_QUEUE_LENGTH 16U
+#define COMMAND_CACHE_SIZE 16U
+
+#define TASK_HEALTH_CONTROL 0U
+#define TASK_HEALTH_ACQ 1U
+#define TASK_HEALTH_MONITOR 2U
+#define TASK_HEALTH_RTD 3U
+#define TASK_HEALTH_BRIDGE 4U
 
 typedef struct
 {
@@ -33,13 +41,37 @@ typedef struct
   uint32_t argument1;
 } AppEvent;
 
+typedef struct
+{
+  uint16_t request_id;
+  uint16_t command_id;
+  int16_t result;
+  uint16_t detail;
+  uint8_t valid;
+} CachedCommandResult;
+
 static volatile uint16_t s_supply_raw[2];
 static uint8_t s_uart_rx_buffer[UART_RX_BUFFER_SIZE];
 static volatile uint32_t s_uart_rx_event_count;
+static volatile uint32_t s_uart_rx_dropped;
+static volatile uint32_t s_event_queue_dropped;
 static osMessageQueueId_t s_uart_rx_queue;
 static osMessageQueueId_t s_event_queue;
 static osTimerId_t s_pulse_timers[8];
+static osThreadId_t s_task_handles[DEVICE_TASK_COUNT];
+static volatile uint32_t s_task_last_alive[DEVICE_TASK_COUNT];
+static CachedCommandResult s_command_cache[COMMAND_CACHE_SIZE];
+static uint8_t s_command_cache_index;
+static uint32_t s_watchdog_refresh_count;
 static uint16_t s_bridge_sequence;
+
+static const uint32_t s_task_deadline_ms[DEVICE_TASK_COUNT] = {
+    100U,
+    500U,
+    500U,
+    1600U,
+    500U,
+};
 
 static const osThreadAttr_t s_monitor_task_attributes = {
     .name = "monitorTask",
@@ -79,6 +111,66 @@ static void BridgeTask(void *argument);
 static void PulseTimerCallback(void *argument);
 static void HandleCommandFrame(const BridgeProtocolFrame *frame);
 static void SendAck(uint16_t request_id, uint16_t command_id, int16_t result, uint16_t detail);
+static void TaskHealthReport(uint8_t task_index);
+static void QueueEvent(const AppEvent *event);
+static const CachedCommandResult *FindCachedCommand(uint16_t request_id, uint16_t command_id);
+static void CacheCommandResult(uint16_t request_id,
+                               uint16_t command_id,
+                               int16_t result,
+                               uint16_t detail);
+
+static void TaskHealthReport(uint8_t task_index)
+{
+  if (task_index < DEVICE_TASK_COUNT)
+  {
+    s_task_last_alive[task_index] = osKernelGetTickCount() + 1U;
+  }
+}
+
+static void QueueEvent(const AppEvent *event)
+{
+  if (event == 0)
+  {
+    return;
+  }
+
+  if (osMessageQueuePut(s_event_queue, event, 0U, 0U) != osOK)
+  {
+    s_event_queue_dropped++;
+  }
+}
+
+static const CachedCommandResult *FindCachedCommand(uint16_t request_id, uint16_t command_id)
+{
+  for (uint8_t index = 0U; index < COMMAND_CACHE_SIZE; index++)
+  {
+    const CachedCommandResult *entry = &s_command_cache[index];
+
+    if ((entry->valid != 0U) &&
+        (entry->request_id == request_id) &&
+        (entry->command_id == command_id))
+    {
+      return entry;
+    }
+  }
+
+  return 0;
+}
+
+static void CacheCommandResult(uint16_t request_id,
+                               uint16_t command_id,
+                               int16_t result,
+                               uint16_t detail)
+{
+  CachedCommandResult *entry = &s_command_cache[s_command_cache_index];
+
+  entry->request_id = request_id;
+  entry->command_id = command_id;
+  entry->result = result;
+  entry->detail = detail;
+  entry->valid = 1U;
+  s_command_cache_index = (uint8_t)((s_command_cache_index + 1U) % COMMAND_CACHE_SIZE);
+}
 
 void App_Init(void)
 {
@@ -131,27 +223,37 @@ void App_Init(void)
 
 void App_CreateTasks(void)
 {
-  if (osThreadNew(MonitorTask, NULL, &s_monitor_task_attributes) == NULL)
+  s_task_handles[TASK_HEALTH_MONITOR] =
+      osThreadNew(MonitorTask, NULL, &s_monitor_task_attributes);
+  if (s_task_handles[TASK_HEALTH_MONITOR] == NULL)
   {
     Error_Handler();
   }
 
-  if (osThreadNew(ControlTask, NULL, &s_control_task_attributes) == NULL)
+  s_task_handles[TASK_HEALTH_CONTROL] =
+      osThreadNew(ControlTask, NULL, &s_control_task_attributes);
+  if (s_task_handles[TASK_HEALTH_CONTROL] == NULL)
   {
     Error_Handler();
   }
 
-  if (osThreadNew(AcqTask, NULL, &s_acq_task_attributes) == NULL)
+  s_task_handles[TASK_HEALTH_ACQ] =
+      osThreadNew(AcqTask, NULL, &s_acq_task_attributes);
+  if (s_task_handles[TASK_HEALTH_ACQ] == NULL)
   {
     Error_Handler();
   }
 
-  if (osThreadNew(RtdTask, NULL, &s_rtd_task_attributes) == NULL)
+  s_task_handles[TASK_HEALTH_RTD] =
+      osThreadNew(RtdTask, NULL, &s_rtd_task_attributes);
+  if (s_task_handles[TASK_HEALTH_RTD] == NULL)
   {
     Error_Handler();
   }
 
-  if (osThreadNew(BridgeTask, NULL, &s_bridge_task_attributes) == NULL)
+  s_task_handles[TASK_HEALTH_BRIDGE] =
+      osThreadNew(BridgeTask, NULL, &s_bridge_task_attributes);
+  if (s_task_handles[TASK_HEALTH_BRIDGE] == NULL)
   {
     Error_Handler();
   }
@@ -168,8 +270,46 @@ static void MonitorTask(void *argument)
     uint32_t now = osKernelGetTickCount();
     uint16_t mv_24v = (uint16_t)(((uint32_t)s_supply_raw[0] * 36300U) / 4095U);
     uint16_t mv_5v = (uint16_t)(((uint32_t)s_supply_raw[1] * 6600U) / 4095U);
+    uint32_t alive_mask = 0U;
+    uint16_t stack_free[DEVICE_TASK_COUNT] = {0U};
+
+    TaskHealthReport(TASK_HEALTH_MONITOR);
+
+    for (uint8_t index = 0U; index < DEVICE_TASK_COUNT; index++)
+    {
+      uint32_t last_alive = s_task_last_alive[index];
+
+      if ((s_task_handles[index] != NULL) &&
+          (last_alive != 0U) &&
+          ((now - (last_alive - 1U)) <= s_task_deadline_ms[index]))
+      {
+        alive_mask |= (1UL << index);
+      }
+
+      if (s_task_handles[index] != NULL)
+      {
+        uint32_t free_bytes = osThreadGetStackSpace(s_task_handles[index]);
+        stack_free[index] = (free_bytes > 0xFFFFU) ? 0xFFFFU : (uint16_t)free_bytes;
+      }
+    }
+
+    if (alive_mask == ((1UL << DEVICE_TASK_COUNT) - 1UL))
+    {
+      (void)HAL_IWDG_Refresh(&hiwdg);
+      s_watchdog_refresh_count++;
+      DeviceState_SetFault(DEVICE_FAULT_RUNTIME, 0U);
+    }
+    else
+    {
+      DeviceState_SetFault(DEVICE_FAULT_RUNTIME, 1U);
+    }
 
     DeviceState_UpdateSupplies(s_supply_raw[0], s_supply_raw[1], mv_24v, mv_5v);
+    DeviceState_UpdateRuntimeDiagnostics(alive_mask,
+                                         stack_free,
+                                         s_uart_rx_dropped,
+                                         s_event_queue_dropped,
+                                         s_watchdog_refresh_count);
 
     if ((now - last_led_tick) >= LED_PERIOD_MS)
     {
@@ -191,6 +331,7 @@ static void ControlTask(void *argument)
   {
     uint8_t current_di;
 
+    TaskHealthReport(TASK_HEALTH_CONTROL);
     DigitalInput_Update();
     current_di = DigitalInput_GetStableBits();
     DeviceState_UpdateDigital(current_di, RelayOutput_GetMask());
@@ -203,7 +344,7 @@ static void ControlTask(void *argument)
           .argument0 = current_di,
           .argument1 = (uint32_t)(current_di ^ previous_di),
       };
-      (void)osMessageQueuePut(s_event_queue, &event, 0U, 0U);
+      QueueEvent(&event);
       previous_di = current_di;
     }
 
@@ -219,6 +360,7 @@ static void AcqTask(void *argument)
 
   for (;;)
   {
+    TaskHealthReport(TASK_HEALTH_ACQ);
     if (ADS1256_ReadAll(values) != 0U)
     {
       DeviceState_UpdateAnalogInputs(values);
@@ -241,6 +383,7 @@ static void RtdTask(void *argument)
     int32_t temperature_millicelsius = 0;
     uint8_t valid = MAX31865_ReadMilliCelsius(&temperature_millicelsius);
 
+    TaskHealthReport(TASK_HEALTH_RTD);
     DeviceState_UpdateTemperature(temperature_millicelsius, (valid == 0U) ? 1U : 0U);
     osDelay(RTD_PERIOD_MS);
   }
@@ -252,6 +395,7 @@ static void BridgeTask(void *argument)
   BridgeProtocolFrame frame;
   uint32_t last_heartbeat_tick = osKernelGetTickCount();
   uint32_t last_telemetry_tick = osKernelGetTickCount();
+  uint32_t last_diagnostics_tick = osKernelGetTickCount();
 
   (void)argument;
 
@@ -287,6 +431,7 @@ static void BridgeTask(void *argument)
     uint8_t output[BRIDGE_PROTOCOL_MAX_FRAME_SIZE];
     uint16_t length;
 
+    TaskHealthReport(TASK_HEALTH_BRIDGE);
     DeviceState_UpdateUart(s_uart_rx_event_count);
 
     while (osMessageQueueGet(s_uart_rx_queue, &byte, NULL, 0U) == osOK)
@@ -354,6 +499,24 @@ static void BridgeTask(void *argument)
       }
     }
 
+    if ((now - last_diagnostics_tick) >= DIAGNOSTICS_PERIOD_MS)
+    {
+      length = BridgeProtocol_BuildDiagnostics(s_bridge_sequence++,
+                                               state.uptime_ms,
+                                               state.task_alive_bits,
+                                               state.uart_rx_dropped,
+                                               state.event_queue_dropped,
+                                               state.watchdog_refresh_count,
+                                               state.task_stack_free,
+                                               output,
+                                               sizeof(output));
+      last_diagnostics_tick = now;
+      if (length > 0U)
+      {
+        (void)HAL_UART_Transmit(&huart1, output, length, 20U);
+      }
+    }
+
     osDelay(10U);
   }
 }
@@ -361,12 +524,20 @@ static void BridgeTask(void *argument)
 static void HandleCommandFrame(const BridgeProtocolFrame *frame)
 {
   BridgeProtocolCommand command;
+  const CachedCommandResult *cached;
   int16_t result = BRIDGE_RESULT_UNSUPPORTED;
   uint16_t detail = 0U;
 
   if (BridgeProtocol_ParseCommand(frame, &command) == false)
   {
     SendAck(0U, 0U, BRIDGE_RESULT_INVALID_ARGUMENT, 0U);
+    return;
+  }
+
+  cached = FindCachedCommand(command.request_id, command.command_id);
+  if (cached != 0)
+  {
+    SendAck(command.request_id, command.command_id, cached->result, cached->detail);
     return;
   }
 
@@ -383,7 +554,7 @@ static void HandleCommandFrame(const BridgeProtocolFrame *frame)
               .argument0 = RelayOutput_GetMask(),
               .argument1 = command.request_id,
           };
-          (void)osMessageQueuePut(s_event_queue, &event, 0U, 0U);
+          QueueEvent(&event);
         }
         result = BRIDGE_RESULT_OK;
       }
@@ -422,7 +593,7 @@ static void HandleCommandFrame(const BridgeProtocolFrame *frame)
               .argument0 = mask,
               .argument1 = command.request_id,
           };
-          (void)osMessageQueuePut(s_event_queue, &event, 0U, 0U);
+          QueueEvent(&event);
         }
         result = (osTimerStart(s_pulse_timers[command.argument0],
                                command.argument1) == osOK)
@@ -471,6 +642,7 @@ static void HandleCommandFrame(const BridgeProtocolFrame *frame)
       break;
   }
 
+  CacheCommandResult(command.request_id, command.command_id, result, detail);
   SendAck(command.request_id, command.command_id, result, detail);
 }
 
@@ -506,7 +678,10 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t size)
 
     for (index = 0U; index < size; index++)
     {
-      (void)osMessageQueuePut(s_uart_rx_queue, &s_uart_rx_buffer[index], 0U, 0U);
+      if (osMessageQueuePut(s_uart_rx_queue, &s_uart_rx_buffer[index], 0U, 0U) != osOK)
+      {
+        s_uart_rx_dropped++;
+      }
     }
 
     s_uart_rx_event_count++;

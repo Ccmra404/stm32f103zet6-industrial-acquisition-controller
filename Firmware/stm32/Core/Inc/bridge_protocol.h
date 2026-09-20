@@ -18,8 +18,11 @@ extern "C" {
 #define BRIDGE_MSG_HEARTBEAT 0x02U
 #define BRIDGE_MSG_TELEMETRY 0x10U
 #define BRIDGE_MSG_EVENT 0x11U
+#define BRIDGE_MSG_DIAGNOSTICS 0x12U
 #define BRIDGE_MSG_COMMAND 0x20U
 #define BRIDGE_MSG_COMMAND_ACK 0x21U
+
+#define BRIDGE_DIAGNOSTIC_TASK_COUNT 5U
 
 #define BRIDGE_CMD_SET_RELAY_MASK 0x0001U
 #define BRIDGE_CMD_PULSE_RELAY 0x0002U
@@ -112,6 +115,16 @@ typedef struct
   uint16_t detail;
 } BridgeProtocolAck;
 
+typedef struct
+{
+  uint32_t timestamp_ms;
+  uint32_t task_alive_bits;
+  uint32_t uart_rx_dropped;
+  uint32_t event_queue_dropped;
+  uint32_t watchdog_refresh_count;
+  uint16_t task_stack_free[BRIDGE_DIAGNOSTIC_TASK_COUNT];
+} BridgeProtocolDiagnostics;
+
 uint16_t BridgeProtocol_Crc16(const uint8_t *data, uint16_t length);
 void BridgeProtocol_ParserInit(BridgeProtocolParser *parser);
 bool BridgeProtocol_ParserPushByte(BridgeProtocolParser *parser,
@@ -151,6 +164,16 @@ uint16_t BridgeProtocol_BuildTelemetry(uint16_t sequence,
                                        uint8_t *output,
                                        uint16_t output_size);
 
+uint16_t BridgeProtocol_BuildDiagnostics(uint16_t sequence,
+                                         uint32_t timestamp_ms,
+                                         uint32_t task_alive_bits,
+                                         uint32_t uart_rx_dropped,
+                                         uint32_t event_queue_dropped,
+                                         uint32_t watchdog_refresh_count,
+                                         const uint16_t task_stack_free[BRIDGE_DIAGNOSTIC_TASK_COUNT],
+                                         uint8_t *output,
+                                         uint16_t output_size);
+
 uint16_t BridgeProtocol_BuildCommandAck(uint16_t sequence,
                                         uint16_t request_id,
                                         uint16_t command_id,
@@ -176,6 +199,9 @@ bool BridgeProtocol_ParseHeartbeat(const BridgeProtocolFrame *frame,
                                    BridgeProtocolHeartbeat *heartbeat);
 bool BridgeProtocol_ParseTelemetry(const BridgeProtocolFrame *frame,
                                    BridgeProtocolTelemetry *telemetry);
+
+bool BridgeProtocol_ParseDiagnostics(const BridgeProtocolFrame *frame,
+                                     BridgeProtocolDiagnostics *diagnostics);
 bool BridgeProtocol_ParseCommandAck(const BridgeProtocolFrame *frame,
                                     BridgeProtocolAck *ack);
 

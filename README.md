@@ -32,8 +32,8 @@
 
 | 层面 | 当前实现 |
 | --- | --- |
-| 实时软件 | FreeRTOS 1 ms tick、抢占式调度、CMSIS-RTOS V2、5 个业务任务、ADC DMA、UART DMA 空闲接收、事件队列和继电器脉冲定时器 |
-| 桥接软件 | UART1 字节流解析、HELLO、HEARTBEAT、TELEMETRY、EVENT、COMMAND、COMMAND_ACK 和 3 秒离线判断 |
+| 实时软件 | FreeRTOS 1 ms tick、抢占式调度、CMSIS-RTOS V2、5 个业务任务、任务活性监督、IWDG、ADC DMA、UART DMA 空闲接收和继电器脉冲定时器 |
+| 桥接软件 | UART1 字节流解析、HELLO、HEARTBEAT、TELEMETRY、EVENT、COMMAND、COMMAND_ACK、命令队列、ACK 重试和串口控制台 |
 | 通信协议 | `AA 55` 帧头、版本、消息类型、序号、长度、256 字节载荷和 CRC-16 |
 | 状态管理 | `device_state` 统一保存设备快照，使用 mutex 保证任务读取一致性 |
 | 采集控制 | 8 路 24 位模拟采集、PT100 或 PT1000 温度采集、8 路隔离数字输入、8 路继电器和 2 路模拟输出 |
@@ -43,9 +43,11 @@
 已完成代码级功能：
 
 - STM32 实时采集、控制、状态发布、事件上报和命令处理。
-- ESP32-S3 遥测接收、状态缓存、心跳发送、在线判断和 ACK 解析。
+- ESP32-S3 遥测接收、状态缓存、心跳发送、在线判断、命令队列和 ACK 重试。
 - 继电器掩码、继电器脉冲、模拟输出、故障清除和配置保存命令。
 - EEPROM 参数结构包含 `magic`、`version` 和 `crc`，校验失败时回退默认值。
+- STM32 保存最近 16 条命令结果，重复请求不会再次执行输出。
+- 任务活性监督、栈余量、UART 丢包和事件队列丢包可进入统一状态快照。
 
 保留的扩展入口：
 
@@ -61,7 +63,7 @@
 
 <p align="center">
   <a href="Documentation/images/sw-architecture.webp">
-    <img src="https://raw.githubusercontent.com/Ccmra404/stm32f103zet6-industrial-acquisition-controller/main/Documentation/images/sw-architecture.webp" width="100%" alt="软件系统架构图">
+    <img src="https://raw.githubusercontent.com/Ccmra404/stm32f103zet6-industrial-acquisition-controller/main/Documentation/images/sw-architecture.webp?v=freertos3" width="100%" alt="软件系统架构图">
   </a>
 </p>
 
@@ -76,12 +78,13 @@ STM32 使用 FreeRTOS 和 CMSIS-RTOS V2。系统节拍为 `1 ms`，开启抢占�
 | 互斥锁 | `configUSE_MUTEXES = 1` | 保护 `device_state` 状态快照 |
 | 软件定时器 | `configUSE_TIMERS = 1` | 执行 8 路继电器脉冲超时 |
 | 动态内存 | `heap_4`，12 KB | 创建任务、队列、互斥锁和定时器 |
+| 看门狗 | IWDG，约 4 秒 | `monitorTask` 确认全部任务存活后刷新 |
 
 ### FreeRTOS 调度与任务通信
 
 <p align="center">
   <a href="Documentation/images/sw-task-flow.webp">
-    <img src="https://raw.githubusercontent.com/Ccmra404/stm32f103zet6-industrial-acquisition-controller/main/Documentation/images/sw-task-flow.webp?v=freertos" width="100%" alt="FreeRTOS 调度和任务通信图">
+    <img src="https://raw.githubusercontent.com/Ccmra404/stm32f103zet6-industrial-acquisition-controller/main/Documentation/images/sw-task-flow.webp?v=freertos3" width="100%" alt="FreeRTOS 调度和任务通信图">
   </a>
 </p>
 
@@ -103,6 +106,8 @@ STM32 使用 FreeRTOS 和 CMSIS-RTOS V2。系统节拍为 `1 ms`，开启抢占�
 | `s_event_queue` | 16 条消息 | 输入变化事件与遥测解耦，不覆盖历史事件 |
 | `deviceStateMutex` | 普通互斥锁 | 多个任务读写状态时提供一致快照 |
 | `osTimerOnce` | 8 个 | 继电器脉冲到期后自动撤销输出位 |
+| `s_command_queue` | 8 条命令 | ESP32 控制台和命令路由之间的解耦 |
+| `s_ack_queue` | 8 条确认 | 匹配 `request_id` 和 `command_id` 后结束重试 |
 | `portMUX` | ESP32 临界区 | 保护在线状态和最后接收时间 |
 
 ### 已实现的软件亮点
@@ -113,6 +118,12 @@ STM32 使用 FreeRTOS 和 CMSIS-RTOS V2。系统节拍为 `1 ms`，开启抢占�
 - 使用消息队列传递输入事件，事件不会被周期遥测覆盖。
 - 使用互斥锁保护统一状态快照，避免任务读到半更新数据。
 - 使用 8 个一次性软件定时器实现非阻塞继电器脉冲。
+- `monitorTask` 检查 5 个任务的存活时间和栈余量，全部健康时才刷新 IWDG。
+- UART 接收队列和事件队列记录丢包计数，异常不会被静默忽略。
+- STM32 每 5 秒发送诊断帧，ESP32 可以查看任务活性、栈余量和错误计数。
+- ESP32 命令采用队列发送，500 ms 无 ACK 时复用同一 `request_id` 重试两次。
+- STM32 缓存最近 16 条请求结果，重复请求直接返回原结果，不重复操作继电器。
+- ESP32 提供串口控制台，可直接执行继电器、脉冲、DAC、故障清除和配置命令。
 - 使用独立心跳、遥测、事件和 ACK 消息，故障发生时状态不会丢失。
 - 共享协议代码不依赖 HAL、FreeRTOS 或 ESP-IDF，STM32 和 ESP32-S3 使用同一份协议实现。
 
@@ -124,9 +135,22 @@ ESP32-S3 使用 ESP-IDF 6.1。UART1 使用 `IO17 TX` 和 `IO18 RX`，波特率�
 | --- | ---: | --- |
 | `uart_rx` | 8 | 读取 UART1，使用状态机逐字节解析帧 |
 | `heartbeat` | 6 | 发送 HELLO 和心跳，连续 3 秒无有效帧时判断 STM32 离线 |
-| `command_router` | 6 | 提供命令发送入口，后续接入远程命令队列 |
+| `command_router` | 6 | 发送命令、等待 ACK、超时重试并打印执行结果 |
+| `console` | 4 | 通过 UART0 执行继电器、脉冲、DAC 和配置命令 |
 
-桥接层保存最近一次遥测，使用临界区保护在线状态和最后接收时间。收到 `COMMAND_ACK` 后解析请求编号、命令编号、结果和补充信息。
+桥接层保存最近一次遥测，使用临界区保护在线状态和最后接收时间。控制台把命令放入 `s_command_queue`，命令路由构建帧并等待 `s_ack_queue` 中的确认。
+
+ESP32-S3 串口控制台支持：
+
+```text
+relay <mask>
+pulse <channel> <milliseconds>
+dac <channel> <raw-value>
+clear <fault-mask>
+save
+load
+status
+```
 
 ### 状态一致性
 
@@ -169,6 +193,7 @@ CRC 覆盖 `version` 到 `payload`，不覆盖帧头。所有多字节字段使�
 | `0x02` | `HEARTBEAT` | 双向 | 上报运行时间、健康状态和故障位 |
 | `0x10` | `TELEMETRY` | STM32 到 ESP32-S3 | 上报采集值、输入、输出和电源状态 |
 | `0x11` | `EVENT` | STM32 到 ESP32-S3 | 上报输入变化和继电器变化 |
+| `0x12` | `DIAGNOSTICS` | STM32 到 ESP32-S3 | 上报任务活性、栈余量和错误计数 |
 | `0x20` | `COMMAND` | ESP32-S3 到 STM32 | 请求输出或配置操作 |
 | `0x21` | `COMMAND_ACK` | STM32 到 ESP32-S3 | 返回命令结果 |
 
@@ -187,7 +212,7 @@ CRC 覆盖 `version` 到 `payload`，不覆盖帧头。所有多字节字段使�
 
 <p align="center">
   <a href="Documentation/images/sw-protocol-flow.webp">
-    <img src="https://raw.githubusercontent.com/Ccmra404/stm32f103zet6-industrial-acquisition-controller/main/Documentation/images/sw-protocol-flow.webp" width="100%" alt="板间协议和命令流程图">
+    <img src="https://raw.githubusercontent.com/Ccmra404/stm32f103zet6-industrial-acquisition-controller/main/Documentation/images/sw-protocol-flow.webp?v=freertos3" width="100%" alt="板间协议和命令流程图">
   </a>
 </p>
 

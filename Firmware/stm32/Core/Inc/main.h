@@ -28,6 +28,7 @@ extern "C" {
 
 /* Includes ------------------------------------------------------------------*/
 #include "stm32f1xx_hal.h"
+#include "stm32f1xx_hal_iwdg.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -38,6 +39,8 @@ extern "C" {
 /* USER CODE BEGIN ET */
 
 /* USER CODE END ET */
+
+extern IWDG_HandleTypeDef hiwdg;
 
 /* Exported constants --------------------------------------------------------*/
 /* USER CODE BEGIN EC */

@@ -227,6 +227,17 @@ ADC 节点使用 DMA circular 写入两个 `uint16_t` 样本。
 
 输出范围和校准系数由 `App/analog_output` 管理。
 
+### IWDG
+
+| 项目 | 配置 |
+| --- | --- |
+| Clock source | LSI |
+| Prescaler | 64 |
+| Reload | 2500 |
+| Timeout | 约 4 秒 |
+
+IWDG 由 `monitorTask` 统一刷新。只有 `controlTask`、`acqTask`、`monitorTask`、`rtdTask` 和 `bridgeTask` 全部在期限内更新活性标记时才执行刷新。
+
 ## GPIO 配置
 
 ### 输出
@@ -309,10 +320,11 @@ FreeRTOS 使用 `NVIC_PRIORITYGROUP_4`。调用 FreeRTOS API 的中断优先级�
 2. 配置 RCC、SYS、TIM6 和时钟树。
 3. 配置 USART、SPI、I2C、CAN、ADC 和 DAC。
 4. 配置 GPIO、EXTI 和 DMA。
-5. 启用 FreeRTOS 和 CMSIS-V2。
-6. 检查引脚冲突并生成代码。
-7. 编译并下载空工程。
-8. 验证 SWD、USART1 回环和 LED。
-9. 再添加 `App/` 模块。
+5. 配置 IWDG。
+6. 启用 FreeRTOS 和 CMSIS-V2。
+7. 检查引脚冲突并生成代码。
+8. 编译并下载空工程。
+9. 验证 SWD、USART1 回环和 LED。
+10. 再添加业务模块。
 
 完整的固定引脚说明见 [IO 与接口规划](../Documentation/io-map.md)。

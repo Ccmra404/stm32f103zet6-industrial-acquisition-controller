@@ -13,6 +13,9 @@ extern "C" {
 #define DEVICE_FAULT_ADS1256    (1U << 3)
 #define DEVICE_FAULT_CONFIG     (1U << 4)
 #define DEVICE_FAULT_COMM       (1U << 5)
+#define DEVICE_FAULT_RUNTIME    (1U << 6)
+
+#define DEVICE_TASK_COUNT       5U
 
 typedef struct
 {
@@ -28,6 +31,11 @@ typedef struct
   uint8_t relay_bits;
   uint16_t analog_output_raw[2];
   uint16_t fault_bits;
+  uint32_t task_alive_bits;
+  uint16_t task_stack_free[DEVICE_TASK_COUNT];
+  uint32_t uart_rx_dropped;
+  uint32_t event_queue_dropped;
+  uint32_t watchdog_refresh_count;
 } DeviceStateSnapshot;
 
 void DeviceState_Init(void);
@@ -38,6 +46,11 @@ void DeviceState_UpdateAnalogInputs(const int32_t ai_raw[8]);
 void DeviceState_UpdateTemperature(int32_t rtd_millicelsius, uint8_t fault);
 void DeviceState_UpdateDigital(uint8_t di_bits, uint8_t relay_bits);
 void DeviceState_UpdateAnalogOutput(uint8_t channel, uint16_t value);
+void DeviceState_UpdateRuntimeDiagnostics(uint32_t task_alive_bits,
+                                          const uint16_t task_stack_free[DEVICE_TASK_COUNT],
+                                          uint32_t uart_rx_dropped,
+                                          uint32_t event_queue_dropped,
+                                          uint32_t watchdog_refresh_count);
 void DeviceState_ClearFaults(uint16_t fault_mask);
 void DeviceState_SetFault(uint16_t fault_mask, uint8_t active);
 DeviceStateSnapshot DeviceState_Get(void);
