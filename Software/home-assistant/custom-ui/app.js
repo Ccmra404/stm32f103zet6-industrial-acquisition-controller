@@ -169,7 +169,14 @@ function hex(value, width) {
 }
 
 function createChart() {
-  if (state.chart) return;
+  if (state.chart) return state.chart;
+  if (typeof Chart === "undefined") {
+    const hint = $("chartEmpty");
+    hint.textContent = "图表组件加载失败，请检查网络后刷新";
+    setVisible(hint, true);
+    return null;
+  }
+  $("chartEmpty").textContent = "暂无采样数据";
   const colors = ["#206bc4", "#2fb344", "#f59f00", "#d63939", "#ae3ec9", "#0ca678", "#f76707", "#4c6ef5"];
   state.chart = new Chart($("aiChart"), {
     type: "line",
@@ -200,10 +207,12 @@ function createChart() {
       },
     },
   });
+  return state.chart;
 }
 
 function appendChartPoint() {
-  createChart();
+  const chart = createChart();
+  if (!chart) return;
   const values = [];
   for (let index = 0; index < 8; index += 1) {
     values.push(numberValue(`sensor.industrial_controller_ai_${index}`, null));
