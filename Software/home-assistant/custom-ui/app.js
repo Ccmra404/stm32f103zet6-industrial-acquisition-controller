@@ -18,7 +18,6 @@ const ENTITY = {
   relayMask: "number.industrial_controller_relay_mask",
   allOn: "button.industrial_controller_all_relays_on",
   allOff: "button.industrial_controller_all_relays_off",
-  pulse: "button.industrial_controller_pulse_relay_1",
   clear: "button.industrial_controller_clear_faults",
   save: "button.industrial_controller_save_config",
   load: "button.industrial_controller_load_config",
@@ -51,7 +50,7 @@ const FAULT_BITS = [
 
 const COMMAND_LOG_KEY = "industrialCommandLog";
 const COMMAND_LOG_LIMIT = 20;
-const CONSOLE_BUILD = "UI 2026-09-20.4";
+const CONSOLE_BUILD = "UI 2026-09-20.5";
 
 const RESULT_TEXT = {
   0: "成功",
@@ -812,8 +811,6 @@ async function sendCommand(button) {
     const marker = await currentAckMarker();
     if (command === "relay") {
       await pressButton(button.dataset.mask === "0" ? ENTITY.allOff : ENTITY.allOn);
-    } else if (command === "pulse") {
-      await pressButton(ENTITY.pulse);
     } else if (command === "clear") {
       await pressButton(ENTITY.clear);
     } else if (command === "save") {
