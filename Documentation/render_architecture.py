@@ -545,15 +545,16 @@ def software_architecture():
         ("03", "acqTask", "100ms 读取 ADS1256 八通道原始值"),
         ("04", "rtdTask", "500ms 读取 MAX31865 温度"),
         ("05", "bridgeTask", "解析命令、发送心跳、遥测和事件，缓存请求结果"),
+        ("06", "modbusTask", "2ms 轮询 RS485，处理 0x03 和 0x06"),
     ]
-    y = 278
+    y = 270
     for index, title, detail in stm_tasks:
-        add_rect(parts, 90, y, 634, 82, COLORS["white"], COLORS["line"], 14)
-        add_rect(parts, 90, y, 7, 82, COLORS["blue"], radius=3)
-        add_text(parts, 116, y + 32, index, 15, COLORS["blue"], weight=500, font=MONO)
-        add_text(parts, 164, y + 33, title, 22, COLORS["ink"], weight=500, font=MONO)
-        add_text(parts, 164, y + 61, detail, 17, COLORS["muted"])
-        y += 94
+        add_rect(parts, 90, y, 634, 72, COLORS["white"], COLORS["line"], 14)
+        add_rect(parts, 90, y, 7, 72, COLORS["blue"], radius=3)
+        add_text(parts, 116, y + 29, index, 15, COLORS["blue"], weight=500, font=MONO)
+        add_text(parts, 164, y + 30, title, 22, COLORS["ink"], weight=500, font=MONO)
+        add_text(parts, 164, y + 57, detail, 17, COLORS["muted"])
+        y += 76
 
     add_rect(parts, 90, 760, 634, 132, COLORS["white"], COLORS["line"], 16)
     add_text(parts, 116, 797, "服务与驱动", 23, COLORS["ink"], weight=500)
@@ -579,9 +580,9 @@ def software_architecture():
     add_text(parts, 1176, 255, "ESP-IDF 6.1 + FreeRTOS", 18, COLORS["muted"])
 
     esp_tasks = [
-        ("06", "uart_rx", "优先级 8，读取 UART1 并逐字节解析"),
-        ("07", "heartbeat", "优先级 6，发送 HELLO 和心跳，判断 3 秒离线"),
-        ("08", "command_router", "优先级 6，UART0 控制台、ACK 匹配和超时重试"),
+        ("07", "uart_rx", "优先级 8，读取 UART1 并逐字节解析"),
+        ("08", "heartbeat", "优先级 6，发送 HELLO 和心跳，判断 3 秒离线"),
+        ("09", "command_router", "优先级 6，UART0 控制台、ACK 匹配和超时重试"),
     ]
     y = 282
     for index, title, detail in esp_tasks:
@@ -648,7 +649,7 @@ def software_task_flow():
             "configTICK_RATE_HZ = 1000",
             "configUSE_MUTEXES = 1",
             "configUSE_TIMERS = 1",
-            "5 个任务活性监督",
+            "6 个任务活性监督",
             "IWDG 4s 看门狗刷新",
             "heap_4 动态内存池 12KB",
             "CMSIS-RTOS V2 统一 API",
@@ -663,7 +664,7 @@ def software_task_flow():
     priority_rows = [
         ("High", "controlTask   5 ms", "acqTask   100 ms", COLORS["red"], COLORS["red_fill"]),
         ("AboveNormal", "monitorTask   50 ms", "rtdTask   500 ms", COLORS["amber"], COLORS["amber_fill"]),
-        ("Normal", "bridgeTask   10 ms loop", "UART / 事件 / 命令", COLORS["blue"], COLORS["blue_fill"]),
+        ("Normal", "bridgeTask   10 ms loop", "modbusTask   2 ms poll", COLORS["blue"], COLORS["blue_fill"]),
         ("Timer", "8 个一次性继电器定时器", "到期自动撤销输出位", COLORS["teal"], COLORS["teal_fill"]),
     ]
     y = 272
@@ -695,14 +696,14 @@ def software_task_flow():
     add_text(parts, 92, 655, "运行时路径", 28, COLORS["ink"], weight=500)
     path_cards = [
         ("中断与 DMA", COLORS["amber"], ["ADC1 DMA", "UART 空闲 DMA", "RxEventCallback", "只投递数据"]),
-        ("采集与控制任务", COLORS["blue"], ["controlTask 5ms", "acqTask 100ms", "rtdTask 500ms", "monitorTask 50ms"]),
+        ("采集与控制任务", COLORS["blue"], ["controlTask 5ms", "acqTask 100ms", "rtdTask 500ms", "monitorTask 50ms", "modbusTask 2ms"]),
         ("状态快照", COLORS["violet"], ["device_state", "mutex 加锁", "DeviceState_Get()", "一致副本"]),
         ("协议桥接", COLORS["teal"], ["bridgeTask", "HEARTBEAT 1s", "TELEMETRY 100ms", "EVENT 队列"]),
         ("ESP32-S3", COLORS["teal"], ["console command", "command_router + ACK", "uart_rx  priority 8", "heartbeat  priority 6"]),
     ]
     x = 94
     for title, color, lines in path_cards:
-        add_rect(parts, x, 690, 300, 190, COLORS["paper"], COLORS["line"], 15)
+        add_rect(parts, x, 690, 300, 205, COLORS["paper"], COLORS["line"], 15)
         add_rect(parts, x, 690, 300, 7, color, radius=3)
         add_text(parts, x + 20, 730, title, 22, COLORS["ink"], weight=500)
         add_list(parts, x + 32, 770, lines, color, 29, 16)
@@ -715,7 +716,7 @@ def software_task_flow():
         parts,
         120,
         948,
-        "中断只搬运数据；任务活性监督通过后才刷新 IWDG，命令重试复用同一请求编号并由 STM32 缓存结果。",
+        "中断只搬运数据；任务监督通过后才刷新 IWDG；bridge 和 Modbus 使用独立接收路径。",
         19,
         COLORS["blue"],
     )

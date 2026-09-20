@@ -33,12 +33,13 @@
 
 | 层面 | 当前实现 |
 | --- | --- |
-| 实时软件 | FreeRTOS 1 ms tick、抢占式调度、CMSIS-RTOS V2、5 个业务任务、任务活性监督、IWDG、ADC DMA、UART DMA 空闲接收和继电器脉冲定时器 |
+| 实时软件 | FreeRTOS 1 ms tick、抢占式调度、CMSIS-RTOS V2、6 个业务任务、任务活性监督、IWDG、ADC DMA、UART DMA 空闲接收和继电器脉冲定时器 |
 | 桥接软件 | UART1 字节流解析、HELLO、HEARTBEAT、TELEMETRY、EVENT、COMMAND、COMMAND_ACK、命令队列、ACK 重试和串口控制台 |
 | 通信协议 | `AA 55` 帧头、版本、消息类型、序号、长度、256 字节载荷和 CRC-16 |
 | 状态管理 | `device_state` 统一保存设备快照，使用 mutex 保证任务读取一致性 |
 | 采集控制 | 8 路 24 位模拟采集、PT100 或 PT1000 温度采集、8 路隔离数字输入、8 路继电器和 2 路模拟输出 |
 | 现场通信 | RS485、RS232 和 CAN，收发器与控制侧隔离 |
+| Modbus RTU | RS485 从站，支持 `0x03` 读保持寄存器和 `0x06` 写单寄存器 |
 | 工程实现 | STM32 与 ESP32-S3 两套固件独立构建，协议编解码代码由两端共同编译 |
 
 已完成代码级功能：
@@ -49,6 +50,7 @@
 - EEPROM 参数结构包含 `magic`、`version` 和 `crc`，校验失败时回退默认值。
 - STM32 保存最近 16 条命令结果，重复请求不会再次执行输出。
 - 任务活性监督、栈余量、UART 丢包和事件队列丢包可进入统一状态快照。
+- STM32 提供 Modbus RTU 从站，上位机可以读取 AI、电源、温度、DI、继电器和故障位。
 
 保留的扩展入口：
 
@@ -64,7 +66,7 @@
 
 <p align="center">
   <a href="Documentation/images/sw-architecture.webp">
-    <img src="https://cdn.jsdelivr.net/gh/Ccmra404/stm32f103zet6-industrial-acquisition-controller@main/Documentation/images/sw-architecture.webp?v=63182ca" width="100%" alt="软件系统架构图">
+    <img src="https://cdn.jsdelivr.net/gh/Ccmra404/stm32f103zet6-industrial-acquisition-controller@main/Documentation/images/sw-architecture.webp?v=modbus1" width="100%" alt="软件系统架构图">
   </a>
 </p>
 
@@ -85,7 +87,7 @@ STM32 使用 FreeRTOS 和 CMSIS-RTOS V2。系统节拍为 `1 ms`，开启抢占�
 
 <p align="center">
   <a href="Documentation/images/sw-task-flow.webp">
-    <img src="https://cdn.jsdelivr.net/gh/Ccmra404/stm32f103zet6-industrial-acquisition-controller@main/Documentation/images/sw-task-flow.webp?v=63182ca" width="100%" alt="FreeRTOS 调度和任务通信图">
+    <img src="https://cdn.jsdelivr.net/gh/Ccmra404/stm32f103zet6-industrial-acquisition-controller@main/Documentation/images/sw-task-flow.webp?v=modbus1" width="100%" alt="FreeRTOS 调度和任务通信图">
   </a>
 </p>
 
@@ -98,6 +100,7 @@ STM32 使用 FreeRTOS 和 CMSIS-RTOS V2。系统节拍为 `1 ms`，开启抢占�
 | `monitorTask` | `AboveNormal` | 50 ms | 读取 24V、5V 电压并刷新状态灯 |
 | `rtdTask` | `AboveNormal` | 500 ms | 读取 MAX31865 温度并更新故障状态 |
 | `bridgeTask` | `Normal` | 10 ms 循环 | 协议解析、心跳、遥测、事件和命令处理 |
+| `modbusTask` | `Normal` | 2 ms 轮询 | Modbus RTU 收帧、寄存器映射和输出命令 |
 
 ### 任务间通信
 
@@ -119,7 +122,7 @@ STM32 使用 FreeRTOS 和 CMSIS-RTOS V2。系统节拍为 `1 ms`，开启抢占�
 - 使用消息队列传递输入事件，事件不会被周期遥测覆盖。
 - 使用互斥锁保护统一状态快照，避免任务读到半更新数据。
 - 使用 8 个一次性软件定时器实现非阻塞继电器脉冲。
-- `monitorTask` 检查 5 个任务的存活时间和栈余量，全部健康时才刷新 IWDG。
+- `monitorTask` 检查 6 个任务的存活时间和栈余量，全部健康时才刷新 IWDG。
 - UART 接收队列和事件队列记录丢包计数，异常不会被静默忽略。
 - STM32 每 5 秒发送诊断帧，ESP32 可以查看任务活性、栈余量和错误计数。
 - ESP32 命令采用队列发送，500 ms 无 ACK 时复用同一 `request_id` 重试两次。
@@ -219,6 +222,12 @@ CRC 覆盖 `version` 到 `payload`，不覆盖帧头。所有多字节字段使�
 
 完整字段和命令定义见[板间协议](Software/PROTOCOL.md)。
 
+### Modbus RTU 从站
+
+STM32 通过 RS485 提供 Modbus RTU 从站，从站地址为 `1`。支持 `0x03` 读保持寄存器和 `0x06` 写单寄存器，寄存器覆盖 AI、电源、RTD、DI、继电器、故障位、继电器命令、DAC 和故障清除。
+
+详细寄存器表见 [Modbus RTU 从站](Software/MODBUS.md)。
+
 ## 硬件系统
 
 硬件分为现场侧、保护与隔离、控制器侧、应用与网络侧。现场信号经过滤波、TVS、光耦或隔离收发器后进入 STM32。ESP32-S3 位于应用与网络侧，只通过 UART1 请求设备服务。
@@ -276,6 +285,7 @@ CRC 覆盖 `version` 到 `payload`，不覆盖帧头。所有多字节字段使�
 | STM32F103ZET6 | Keil MDK | `Firmware/stm32/MDK-ARM/stm32_industrial_controller.uvprojx` | `0 Error(s), 0 Warning(s)` |
 | ESP32-S3 | ESP-IDF 6.1 | `Firmware/esp32` | Build complete |
 | 共享协议 | GCC | `Firmware/tests/protocol_test.c` | GitHub Actions 自动测试 |
+| Modbus RTU | GCC | `Firmware/tests/modbus_test.c` | GitHub Actions 自动测试 |
 
 构建 STM32 固件：
 
@@ -304,6 +314,7 @@ Firmware/
 Software/
   README.md            软件架构和任务设计
   PROTOCOL.md          消息字段、命令和错误码
+  MODBUS.md            RS485 寄存器映射和异常响应
 Documentation/
   images/              软件架构、硬件架构、PCB 和原理图
 ```
@@ -394,7 +405,7 @@ Documentation/
 - 接入 WiFi、MQTT、WebSocket 和 OTA，完成远程状态发布与固件升级。
 - 增加 LCD 状态页、报警页和参数配置页。
 - 完成 ADS1256、MAX31865 和模拟输出的实板标定。
-- 增加 Modbus RTU 寄存器映射和现场设备轮询。
+- 增加 Modbus RTU 多寄存器写入和现场设备轮询。
 - 增加看门狗复位、链路故障和控制命令的自动化联调脚本。
 - 评估电池供电、功耗测量和掉电数据保护。
 
@@ -404,6 +415,7 @@ Documentation/
 | --- | --- |
 | [软件架构](Software/README.md) | STM32、ESP32-S3、任务划分和模块接口 |
 | [板间协议](Software/PROTOCOL.md) | UART 帧、消息类型、命令和错误码 |
+| [Modbus RTU 从站](Software/MODBUS.md) | RS485 寄存器映射、功能码和异常响应 |
 | [CubeMX 配置清单](Software/CUBEMX.md) | 时钟、外设、GPIO、DMA 和 FreeRTOS 配置 |
 | [固件说明](Firmware/README.md) | 两套固件的构建、接线和功能范围 |
 | [协议测试](Firmware/tests/README.md) | 主机侧帧编解码、CRC 和异常路径测试 |

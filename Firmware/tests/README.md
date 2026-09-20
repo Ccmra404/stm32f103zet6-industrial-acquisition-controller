@@ -20,3 +20,22 @@ gcc -std=c11 -Wall -Wextra -Werror \
 ```
 
 测试只依赖 C 标准库，不需要 STM32 HAL、FreeRTOS 或 ESP-IDF。
+
+`modbus_test.c` 直接编译 `Firmware/stm32/Core/Src/modbus_rtu.c`，在主机上验证：
+
+- Modbus RTU CRC-16 标准向量。
+- 功能码 `0x03` 读保持寄存器。
+- 功能码 `0x06` 写单寄存器。
+- 非法功能码、非法地址和非法数量的异常响应。
+- CRC 错误和从站地址不匹配时保持静默。
+
+在 Linux 或 GitHub Actions 中运行：
+
+```bash
+gcc -std=c11 -Wall -Wextra -Werror \
+  -IFirmware/stm32/Core/Inc \
+  Firmware/stm32/Core/Src/modbus_rtu.c \
+  Firmware/tests/modbus_test.c \
+  -o modbus_test
+./modbus_test
+```

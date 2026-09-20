@@ -15,7 +15,7 @@ extern "C" {
 #define DEVICE_FAULT_COMM       (1U << 5)
 #define DEVICE_FAULT_RUNTIME    (1U << 6)
 
-#define DEVICE_TASK_COUNT       5U
+#define DEVICE_TASK_COUNT       6U
 
 typedef struct
 {

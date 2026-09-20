@@ -11,6 +11,7 @@
 #include "field_comm.h"
 #include "main.h"
 #include "max31865.h"
+#include "modbus_rtu.h"
 #include "relay_output.h"
 #include "usart.h"
 
@@ -32,6 +33,26 @@
 #define TASK_HEALTH_MONITOR 2U
 #define TASK_HEALTH_RTD 3U
 #define TASK_HEALTH_BRIDGE 4U
+#define TASK_HEALTH_MODBUS 5U
+
+#define MODBUS_SLAVE_ADDRESS 1U
+#define MODBUS_REGISTER_UPTIME 0x0000U
+#define MODBUS_REGISTER_SUPPLY_24V 0x0001U
+#define MODBUS_REGISTER_SUPPLY_5V 0x0002U
+#define MODBUS_REGISTER_RTD 0x0003U
+#define MODBUS_REGISTER_DI 0x0004U
+#define MODBUS_REGISTER_RELAY 0x0005U
+#define MODBUS_REGISTER_FAULT 0x0006U
+#define MODBUS_REGISTER_AI_BASE 0x0010U
+#define MODBUS_REGISTER_RELAY_CMD 0x0020U
+#define MODBUS_REGISTER_DAC1_CMD 0x0021U
+#define MODBUS_REGISTER_DAC2_CMD 0x0022U
+#define MODBUS_REGISTER_CLEAR_FAULTS 0x0023U
+#define MODBUS_WRITABLE_MASK ((UINT64_C(1) << MODBUS_REGISTER_RELAY_CMD) | \
+                              (UINT64_C(1) << MODBUS_REGISTER_DAC1_CMD) |  \
+                              (UINT64_C(1) << MODBUS_REGISTER_DAC2_CMD) |  \
+                              (UINT64_C(1) << MODBUS_REGISTER_CLEAR_FAULTS))
+#define MODBUS_FRAME_BUFFER_SIZE 256U
 
 typedef struct
 {
@@ -64,6 +85,7 @@ static CachedCommandResult s_command_cache[COMMAND_CACHE_SIZE];
 static uint8_t s_command_cache_index;
 static uint32_t s_watchdog_refresh_count;
 static uint16_t s_bridge_sequence;
+static ModbusRtuServer s_modbus;
 
 static const uint32_t s_task_deadline_ms[DEVICE_TASK_COUNT] = {
     100U,
@@ -71,6 +93,7 @@ static const uint32_t s_task_deadline_ms[DEVICE_TASK_COUNT] = {
     500U,
     1600U,
     500U,
+    300U,
 };
 
 static const osThreadAttr_t s_monitor_task_attributes = {
@@ -103,11 +126,18 @@ static const osThreadAttr_t s_bridge_task_attributes = {
     .priority = osPriorityNormal,
 };
 
+static const osThreadAttr_t s_modbus_task_attributes = {
+    .name = "modbusTask",
+    .stack_size = 1536U,
+    .priority = osPriorityNormal,
+};
+
 static void MonitorTask(void *argument);
 static void ControlTask(void *argument);
 static void AcqTask(void *argument);
 static void RtdTask(void *argument);
 static void BridgeTask(void *argument);
+static void ModbusTask(void *argument);
 static void PulseTimerCallback(void *argument);
 static void HandleCommandFrame(const BridgeProtocolFrame *frame);
 static void SendAck(uint16_t request_id, uint16_t command_id, int16_t result, uint16_t detail);
@@ -172,6 +202,66 @@ static void CacheCommandResult(uint16_t request_id,
   s_command_cache_index = (uint8_t)((s_command_cache_index + 1U) % COMMAND_CACHE_SIZE);
 }
 
+static void ModbusUpdateRegisters(void)
+{
+  DeviceStateSnapshot state = DeviceState_Get();
+
+  s_modbus.registers[MODBUS_REGISTER_UPTIME] = (uint16_t)(state.uptime_ms / 1000U);
+  s_modbus.registers[MODBUS_REGISTER_SUPPLY_24V] = state.supply_24v_mv;
+  s_modbus.registers[MODBUS_REGISTER_SUPPLY_5V] = state.supply_5v_mv;
+  s_modbus.registers[MODBUS_REGISTER_RTD] = (uint16_t)(int16_t)(state.rtd_millicelsius / 100);
+  s_modbus.registers[MODBUS_REGISTER_DI] = state.di_bits;
+  s_modbus.registers[MODBUS_REGISTER_RELAY] = state.relay_bits;
+  s_modbus.registers[MODBUS_REGISTER_FAULT] = state.fault_bits;
+
+  for (uint8_t channel = 0U; channel < 8U; channel++)
+  {
+    uint32_t raw = (uint32_t)state.ai_raw[channel];
+    s_modbus.registers[MODBUS_REGISTER_AI_BASE + (channel * 2U)] = (uint16_t)(raw & 0xFFFFU);
+    s_modbus.registers[MODBUS_REGISTER_AI_BASE + (channel * 2U) + 1U] = (uint16_t)(raw >> 16U);
+  }
+}
+
+static void ModbusApplyWrites(void)
+{
+  for (uint8_t index = 0U; index < s_modbus.write_count; index++)
+  {
+    uint16_t address = s_modbus.writes[index].address;
+    uint16_t value = s_modbus.writes[index].value;
+
+    switch (address)
+    {
+      case MODBUS_REGISTER_RELAY_CMD:
+        if (value <= 0xFFU)
+        {
+          RelayOutput_SetMask((uint8_t)value);
+        }
+        break;
+
+      case MODBUS_REGISTER_DAC1_CMD:
+        if (value <= 4095U)
+        {
+          (void)AnalogOutput_SetRaw(0U, value);
+        }
+        break;
+
+      case MODBUS_REGISTER_DAC2_CMD:
+        if (value <= 4095U)
+        {
+          (void)AnalogOutput_SetRaw(1U, value);
+        }
+        break;
+
+      case MODBUS_REGISTER_CLEAR_FAULTS:
+        DeviceState_ClearFaults(value);
+        break;
+
+      default:
+        break;
+    }
+  }
+}
+
 void App_Init(void)
 {
   DeviceState_Init();
@@ -190,6 +280,8 @@ void App_Init(void)
   {
     DeviceState_SetFault(DEVICE_FAULT_COMM, 1U);
   }
+
+  ModbusRtu_Init(&s_modbus, MODBUS_SLAVE_ADDRESS, MODBUS_WRITABLE_MASK);
 
   s_uart_rx_queue = osMessageQueueNew(UART_RX_QUEUE_LENGTH, sizeof(uint8_t), NULL);
   s_event_queue = osMessageQueueNew(EVENT_QUEUE_LENGTH, sizeof(AppEvent), NULL);
@@ -254,6 +346,13 @@ void App_CreateTasks(void)
   s_task_handles[TASK_HEALTH_BRIDGE] =
       osThreadNew(BridgeTask, NULL, &s_bridge_task_attributes);
   if (s_task_handles[TASK_HEALTH_BRIDGE] == NULL)
+  {
+    Error_Handler();
+  }
+
+  s_task_handles[TASK_HEALTH_MODBUS] =
+      osThreadNew(ModbusTask, NULL, &s_modbus_task_attributes);
+  if (s_task_handles[TASK_HEALTH_MODBUS] == NULL)
   {
     Error_Handler();
   }
@@ -518,6 +617,57 @@ static void BridgeTask(void *argument)
     }
 
     osDelay(10U);
+  }
+}
+
+static void ModbusTask(void *argument)
+{
+  uint8_t request[MODBUS_FRAME_BUFFER_SIZE];
+  uint8_t response[MODBUS_FRAME_BUFFER_SIZE];
+  uint16_t request_length = 0U;
+  uint32_t last_rx_tick = 0U;
+
+  (void)argument;
+
+  for (;;)
+  {
+    uint8_t byte;
+    uint32_t now;
+
+    TaskHealthReport(TASK_HEALTH_MODBUS);
+
+    if (FieldComm_ReadRs485Byte(&byte, 2U) != 0U)
+    {
+      if (request_length < sizeof(request))
+      {
+        request[request_length++] = byte;
+      }
+      else
+      {
+        request_length = 0U;
+      }
+      last_rx_tick = osKernelGetTickCount();
+      continue;
+    }
+
+    now = osKernelGetTickCount();
+    if ((request_length > 0U) && ((now - last_rx_tick) >= 2U))
+    {
+      uint16_t response_length;
+
+      ModbusUpdateRegisters();
+      response_length = ModbusRtu_Process(&s_modbus,
+                                          request,
+                                          request_length,
+                                          response,
+                                          sizeof(response));
+      if (response_length > 0U)
+      {
+        (void)FieldComm_SendRs485(response, response_length, 50U);
+      }
+      ModbusApplyWrites();
+      request_length = 0U;
+    }
   }
 }
 

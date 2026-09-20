@@ -404,6 +404,11 @@
               <FilePath>../Core/Src/device_state.c</FilePath>
             </File>
             <File>
+              <FileName>modbus_rtu.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>../Core/Src/modbus_rtu.c</FilePath>
+            </File>
+            <File>
               <FileName>bridge_protocol.c</FileName>
               <FileType>1</FileType>
               <FilePath>../Core/Src/bridge_protocol.c</FilePath>

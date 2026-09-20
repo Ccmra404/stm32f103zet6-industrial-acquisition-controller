@@ -22,6 +22,17 @@ jobs:
       - name: Run protocol tests
         run: ./protocol_test
 
+      - name: Compile Modbus tests
+        run: |
+          gcc -std=c11 -Wall -Wextra -Werror \
+            -IFirmware/stm32/Core/Inc \
+            Firmware/stm32/Core/Src/modbus_rtu.c \
+            Firmware/tests/modbus_test.c \
+            -o modbus_test
+
+      - name: Run Modbus tests
+        run: ./modbus_test
+
   esp32-build:
     runs-on: ubuntu-latest
     steps:

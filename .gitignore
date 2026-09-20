@@ -17,6 +17,8 @@ Debug/
 Release/
 protocol_test
 protocol_test.exe
+modbus_test
+modbus_test.exe
 __pycache__/
 *.py[cod]
 Documentation/.render/

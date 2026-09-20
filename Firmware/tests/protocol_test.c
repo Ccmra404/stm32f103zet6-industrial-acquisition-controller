@@ -121,7 +121,7 @@ static bool TestTelemetryRoundTrip(void)
 
 static bool TestDiagnosticsRoundTrip(void)
 {
-  const uint16_t stack_free[BRIDGE_DIAGNOSTIC_TASK_COUNT] = {200U, 300U, 400U, 500U, 600U};
+  const uint16_t stack_free[BRIDGE_DIAGNOSTIC_TASK_COUNT] = {200U, 300U, 400U, 500U, 600U, 700U};
   uint8_t frame_data[BRIDGE_PROTOCOL_MAX_FRAME_SIZE];
   BridgeProtocolFrame frame;
   BridgeProtocolDiagnostics diagnostics;
@@ -135,7 +135,7 @@ static bool TestDiagnosticsRoundTrip(void)
                                                     frame_data,
                                                     sizeof(frame_data));
 
-  CHECK(length == 40U);
+  CHECK(length == 42U);
   CHECK(ParseBytes(frame_data, length, &frame));
   CHECK(BridgeProtocol_ParseDiagnostics(&frame, &diagnostics));
   CHECK(diagnostics.timestamp_ms == 9000U);

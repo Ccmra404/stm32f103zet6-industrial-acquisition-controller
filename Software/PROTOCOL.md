@@ -157,11 +157,11 @@ CRC 参数：
 | 字段 | 类型 | 数量 | 说明 |
 | --- | --- | ---: | --- |
 | `timestamp_ms` | `uint32` | 1 | STM32 运行时间 |
-| `task_alive_bits` | `uint32` | 1 | 5 个任务的存活位图 |
+| `task_alive_bits` | `uint32` | 1 | 6 个任务的存活位图 |
 | `uart_rx_dropped` | `uint32` | 1 | UART 接收队列丢包计数 |
 | `event_queue_dropped` | `uint32` | 1 | 事件队列丢包计数 |
 | `watchdog_refresh_count` | `uint32` | 1 | IWDG 刷新次数 |
-| `task_stack_free` | `uint16` | 5 | 各任务最小剩余栈空间 |
+| `task_stack_free` | `uint16` | 6 | 各任务最小剩余栈空间 |
 
 任务位和栈空间顺序固定为：
 
@@ -171,6 +171,7 @@ bit 1 / index 1: acqTask
 bit 2 / index 2: monitorTask
 bit 3 / index 3: rtdTask
 bit 4 / index 4: bridgeTask
+bit 5 / index 5: modbusTask
 ```
 
 当前固件每 5 秒发送一次诊断帧。ESP32-S3 收到后更新状态缓存，并在控制台执行 `status` 时显示。

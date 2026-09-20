@@ -37,7 +37,7 @@ STM32 使用 FreeRTOS 和 CMSIS-RTOS V2。系统节拍为 `1 ms`，开启抢占�
 | `configUSE_TIMERS` | `1` | 执行继电器脉冲超时 |
 | `configTOTAL_HEAP_SIZE` | `12288` | 为任务、队列、互斥锁和定时器提供动态内存 |
 
-`monitorTask` 周期检查 5 个业务任务的存活时间和栈余量。全部任务健康时刷新 IWDG，任一任务超时后停止刷新，让硬件看门狗复位控制器。
+`monitorTask` 周期检查 6 个业务任务的存活时间和栈余量。全部任务健康时刷新 IWDG，任一任务超时后停止刷新，让硬件看门狗复位控制器。
 
 ## 总体结构
 
@@ -72,6 +72,7 @@ STM32 使用 FreeRTOS 和 CMSIS-RTOS V2。系统节拍为 `1 ms`，开启抢占�
 | `device_state` | 保存统一设备快照 | `DeviceState_Update*()`、`DeviceState_Get()` |
 | `bridge_protocol` | 帧构建、解析、CRC 和命令编解码 | `BridgeProtocol_*()` |
 | `field_comm` | RS485、RS232 和 CAN 发送 | `FieldComm_SendRs485()`、`FieldComm_SendCan()` |
+| `modbus_rtu` | Modbus RTU 从站、寄存器映射和异常响应 | `ModbusRtu_Process()` |
 | `monitorTask` | 24V、5V 监测和状态灯 | `DeviceState_UpdateSupplies()` |
 
 ## ESP32-S3 当前模块
@@ -132,6 +133,7 @@ STM32 使用 CubeMX 生成 HAL 初始化，并配置 FreeRTOS。任务按职责�
 | `monitorTask` | `AboveNormal` | 50 ms | 24V、5V 监测和状态灯 |
 | `rtdTask` | `AboveNormal` | 500 ms | MAX31865 读取和故障检测 |
 | `bridgeTask` | `Normal` | 10 ms 循环 | UART 帧解析、心跳、遥测、事件和命令处理 |
+| `modbusTask` | `Normal` | 2 ms 轮询 | RS485 Modbus RTU 收帧、寄存器读写和输出执行 |
 
 中断和任务之间通过队列解耦。UART 空闲 DMA 回调只把接收字节投递到 `s_uart_rx_queue`，协议解析和命令处理由 `bridgeTask` 完成。
 

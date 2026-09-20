@@ -55,6 +55,7 @@ Download
 - DAC1、DAC2 模拟输出
 - AT24C32D 配置存储
 - CAN 初始化和 RS485 方向控制
+- Modbus RTU 从站 `0x03`、`0x06` 和异常响应
 - HELLO、HEARTBEAT、TELEMETRY、EVENT、DIAGNOSTICS、COMMAND 和 COMMAND_ACK
 - 任务活性监督、IWDG、栈余量和队列丢包诊断
 - 最近 16 条命令结果缓存和重复请求去重

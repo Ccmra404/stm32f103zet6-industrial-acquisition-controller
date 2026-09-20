@@ -278,7 +278,7 @@ uint16_t BridgeProtocol_BuildDiagnostics(uint16_t sequence,
                                          uint8_t *output,
                                          uint16_t output_size)
 {
-  uint8_t payload[30];
+  uint8_t payload[32];
   uint16_t offset = 0U;
   uint8_t index;
 
@@ -432,7 +432,7 @@ bool BridgeProtocol_ParseDiagnostics(const BridgeProtocolFrame *frame,
 
   if ((frame == 0) || (diagnostics == 0) ||
       (frame->type != BRIDGE_MSG_DIAGNOSTICS) ||
-      (frame->length != 30U))
+      (frame->length != 32U))
   {
     return false;
   }

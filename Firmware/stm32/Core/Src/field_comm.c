@@ -41,6 +41,16 @@ uint8_t FieldComm_Init(void)
   return 1U;
 }
 
+uint8_t FieldComm_ReadRs485Byte(uint8_t *byte, uint32_t timeout)
+{
+  if (byte == 0)
+  {
+    return 0U;
+  }
+
+  return (HAL_UART_Receive(&huart2, byte, 1U, timeout) == HAL_OK) ? 1U : 0U;
+}
+
 uint8_t FieldComm_SendRs485(const uint8_t *data, uint16_t length, uint32_t timeout)
 {
   HAL_StatusTypeDef status;
