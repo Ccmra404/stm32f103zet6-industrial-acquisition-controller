@@ -39,6 +39,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Generate development TLS certificate
+        run: |
+          openssl req -x509 -newkey rsa:2048 -nodes \
+            -keyout Firmware/esp32/main/certs/serverkey.pem \
+            -out Firmware/esp32/main/certs/servercert.pem \
+            -days 1 \
+            -subj "/CN=industrial-controller.local" \
+            -addext "subjectAltName=DNS:industrial-controller.local"
+
       - name: Build ESP32-S3 firmware
         uses: espressif/esp-idf-ci-action@v1
         with:
