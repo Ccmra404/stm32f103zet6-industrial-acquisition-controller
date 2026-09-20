@@ -81,7 +81,7 @@ STM32 使用 FreeRTOS 和 CMSIS-RTOS V2。系统节拍为 `1 ms`，开启抢占�
 
 <p align="center">
   <a href="Documentation/images/sw-task-flow.webp">
-    <img src="https://raw.githubusercontent.com/Ccmra404/stm32f103zet6-industrial-acquisition-controller/main/Documentation/images/sw-task-flow.webp" width="100%" alt="FreeRTOS 调度和任务通信图">
+    <img src="https://raw.githubusercontent.com/Ccmra404/stm32f103zet6-industrial-acquisition-controller/main/Documentation/images/sw-task-flow.webp?v=freertos" width="100%" alt="FreeRTOS 调度和任务通信图">
   </a>
 </p>
 
