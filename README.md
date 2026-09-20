@@ -12,6 +12,7 @@
   <img src="https://img.shields.io/badge/ADC-ADS1256-C46210" alt="ADS1256">
   <img src="https://img.shields.io/badge/Protocol-CRC--16-B14E4A" alt="CRC-16 Protocol">
   <img src="https://github.com/Ccmra404/stm32f103zet6-industrial-acquisition-controller/actions/workflows/build.yml/badge.svg" alt="Build">
+  <a href="https://github.com/Ccmra404/stm32f103zet6-industrial-acquisition-controller/releases/tag/v1.0.0"><img src="https://img.shields.io/badge/Release-v1.0.0-1F6FEB" alt="Release v1.0.0"></a>
 </p>
 
 <p align="center">
@@ -311,6 +312,8 @@ STM32 通过 RS485 提供 Modbus RTU 从站，从站地址为 `1`。支持 `0x03
 | Modbus RTU | GCC | `Firmware/tests/modbus_test.c` | GitHub Actions 自动测试 |
 | ESP32 组件 | IDF Component Manager | `Firmware/esp32/main/idf_component.yml` | MQTT 1.1.0 |
 | 板间 UART | 115200 8N1 | `PA9/PA10` 与 `IO18/IO17` | 已通过实际链路验证 |
+
+预编译固件见 [v1.0.0 Release](https://github.com/Ccmra404/stm32f103zet6-industrial-acquisition-controller/releases/tag/v1.0.0)：STM32 的 `.hex` 与 ESP32-S3 的 `.bin`，两份必须成对烧写。
 
 构建 STM32 固件：
 
