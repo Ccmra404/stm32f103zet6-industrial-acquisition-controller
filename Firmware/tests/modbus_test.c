@@ -299,8 +299,8 @@ static bool TestMasterBuildReadRequest(void)
   CHECK(request[3] == 0U);
   CHECK(request[4] == 0U);
   CHECK(request[5] == 2U);
-  CHECK(request[6] == 0xC5U);
-  CHECK(request[7] == 0xCDU);
+  CHECK(request[6] == 0xC4U);
+  CHECK(request[7] == 0x0BU);
 
   CHECK(ModbusRtu_BuildReadRequest(1U, 0x05U, 0U, 1U, request, sizeof(request)) == 0U);
   CHECK(ModbusRtu_BuildReadRequest(1U,
