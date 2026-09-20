@@ -8,6 +8,7 @@ STM32 通过 USART2 和隔离 RS485 接口提供 Modbus RTU 从站。当前从�
 | ---: | --- | --- |
 | `0x03` | Read Holding Registers | 读取 1 到 125 个保持寄存器 |
 | `0x06` | Write Single Register | 写入一个可写保持寄存器 |
+| `0x10` | Write Multiple Registers | 写入 1 到 123 个可写保持寄存器 |
 
 异常响应：
 
@@ -56,7 +57,7 @@ ModbusRtu_Process
     |
     +--> 0x03: read register snapshot
     |
-    +--> 0x06: write register and queue output action
+    +--> 0x06 / 0x10: write register values and queue output actions
     |
     v
 RS485 direction -> transmit
@@ -66,4 +67,4 @@ RS485 direction -> transmit
 
 ## 主机测试
 
-`Firmware/tests/modbus_test.c` 在主机侧验证 CRC、`0x03`、`0x06`、异常响应和静默丢弃路径。GitHub Actions 会随每次提交执行该测试。
+`Firmware/tests/modbus_test.c` 在主机侧验证 CRC、`0x03`、`0x06`、`0x10`、异常响应和静默丢弃路径。GitHub Actions 会随每次提交执行该测试。

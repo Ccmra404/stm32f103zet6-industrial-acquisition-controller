@@ -39,7 +39,7 @@
 | 状态管理 | `device_state` 统一保存设备快照，使用 mutex 保证任务读取一致性 |
 | 采集控制 | 8 路 24 位模拟采集、PT100 或 PT1000 温度采集、8 路隔离数字输入、8 路继电器和 2 路模拟输出 |
 | 现场通信 | RS485、RS232 和 CAN，收发器与控制侧隔离 |
-| Modbus RTU | RS485 从站，支持 `0x03` 读保持寄存器和 `0x06` 写单寄存器 |
+| Modbus RTU | RS485 从站，支持 `0x03` 读保持寄存器、`0x06` 写单寄存器和 `0x10` 写多个寄存器 |
 | 工程实现 | STM32 与 ESP32-S3 两套固件独立构建，协议编解码代码由两端共同编译 |
 
 已完成代码级功能：
@@ -66,7 +66,7 @@
 
 <p align="center">
   <a href="Documentation/images/sw-architecture.webp">
-    <img src="https://cdn.jsdelivr.net/gh/Ccmra404/stm32f103zet6-industrial-acquisition-controller@main/Documentation/images/sw-architecture.webp?v=modbus1" width="100%" alt="软件系统架构图">
+    <img src="https://cdn.jsdelivr.net/gh/Ccmra404/stm32f103zet6-industrial-acquisition-controller@main/Documentation/images/sw-architecture.webp?v=modbus2" width="100%" alt="软件系统架构图">
   </a>
 </p>
 
@@ -87,7 +87,7 @@ STM32 使用 FreeRTOS 和 CMSIS-RTOS V2。系统节拍为 `1 ms`，开启抢占�
 
 <p align="center">
   <a href="Documentation/images/sw-task-flow.webp">
-    <img src="https://cdn.jsdelivr.net/gh/Ccmra404/stm32f103zet6-industrial-acquisition-controller@main/Documentation/images/sw-task-flow.webp?v=modbus1" width="100%" alt="FreeRTOS 调度和任务通信图">
+    <img src="https://cdn.jsdelivr.net/gh/Ccmra404/stm32f103zet6-industrial-acquisition-controller@main/Documentation/images/sw-task-flow.webp?v=modbus2" width="100%" alt="FreeRTOS 调度和任务通信图">
   </a>
 </p>
 
@@ -100,7 +100,7 @@ STM32 使用 FreeRTOS 和 CMSIS-RTOS V2。系统节拍为 `1 ms`，开启抢占�
 | `monitorTask` | `AboveNormal` | 50 ms | 读取 24V、5V 电压并刷新状态灯 |
 | `rtdTask` | `AboveNormal` | 500 ms | 读取 MAX31865 温度并更新故障状态 |
 | `bridgeTask` | `Normal` | 10 ms 循环 | 协议解析、心跳、遥测、事件和命令处理 |
-| `modbusTask` | `Normal` | 2 ms 轮询 | Modbus RTU 收帧、寄存器映射和输出命令 |
+| `modbusTask` | `Normal` | 2 ms 轮询 | Modbus RTU `0x03`、`0x06`、`0x10`、寄存器映射和输出命令 |
 
 ### 任务间通信
 
@@ -224,7 +224,7 @@ CRC 覆盖 `version` 到 `payload`，不覆盖帧头。所有多字节字段使�
 
 ### Modbus RTU 从站
 
-STM32 通过 RS485 提供 Modbus RTU 从站，从站地址为 `1`。支持 `0x03` 读保持寄存器和 `0x06` 写单寄存器，寄存器覆盖 AI、电源、RTD、DI、继电器、故障位、继电器命令、DAC 和故障清除。
+STM32 通过 RS485 提供 Modbus RTU 从站，从站地址为 `1`。支持 `0x03`、`0x06` 和 `0x10`，寄存器覆盖 AI、电源、RTD、DI、继电器、故障位、继电器命令、DAC 和故障清除。
 
 详细寄存器表见 [Modbus RTU 从站](Software/MODBUS.md)。
 
@@ -405,7 +405,7 @@ Documentation/
 - 接入 WiFi、MQTT、WebSocket 和 OTA，完成远程状态发布与固件升级。
 - 增加 LCD 状态页、报警页和参数配置页。
 - 完成 ADS1256、MAX31865 和模拟输出的实板标定。
-- 增加 Modbus RTU 多寄存器写入和现场设备轮询。
+- 增加 Modbus RTU 主站轮询和更多现场设备寄存器映射。
 - 增加看门狗复位、链路故障和控制命令的自动化联调脚本。
 - 评估电池供电、功耗测量和掉电数据保护。
 

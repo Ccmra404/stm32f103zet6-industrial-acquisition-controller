@@ -185,6 +185,67 @@ uint16_t ModbusRtu_Process(ModbusRtuServer *server,
     return request_length;
   }
 
+  if (function == 0x10U)
+  {
+    uint8_t byte_count;
+
+    if (request_length < 11U)
+    {
+      return 0U;
+    }
+
+    address = ReadU16Be(&request[2]);
+    quantity = ReadU16Be(&request[4]);
+    byte_count = request[6];
+    if ((quantity == 0U) || (quantity > 123U) ||
+        (byte_count != (uint8_t)(quantity * 2U)) ||
+        (request_length != (uint16_t)(9U + byte_count)))
+    {
+      return BuildException(server->slave_address, function,
+                            MODBUS_RTU_EXCEPTION_ILLEGAL_VALUE,
+                            response, response_size);
+    }
+
+    if (((uint32_t)address + quantity) > MODBUS_RTU_MAX_REGISTERS)
+    {
+      return BuildException(server->slave_address, function,
+                            MODBUS_RTU_EXCEPTION_ILLEGAL_ADDRESS,
+                            response, response_size);
+    }
+
+    for (uint16_t index = 0U; index < quantity; index++)
+    {
+      if ((server->writable_mask & (UINT64_C(1) << (address + index))) == 0U)
+      {
+        return BuildException(server->slave_address, function,
+                              MODBUS_RTU_EXCEPTION_ILLEGAL_ADDRESS,
+                              response, response_size);
+      }
+    }
+
+    for (uint16_t index = 0U; index < quantity; index++)
+    {
+      server->registers[address + index] = ReadU16Be(&request[7U + (index * 2U)]);
+      if (server->write_count < MODBUS_RTU_MAX_WRITES)
+      {
+        server->writes[server->write_count].address = (uint16_t)(address + index);
+        server->writes[server->write_count].value = server->registers[address + index];
+        server->write_count++;
+      }
+    }
+
+    if (response_size < 8U)
+    {
+      return 0U;
+    }
+
+    response[0] = server->slave_address;
+    response[1] = function;
+    WriteU16Be(&response[2], address);
+    WriteU16Be(&response[4], quantity);
+    return AppendCrc(response, 6U);
+  }
+
   return BuildException(server->slave_address, function,
                         MODBUS_RTU_EXCEPTION_ILLEGAL_FUNCTION,
                         response, response_size);

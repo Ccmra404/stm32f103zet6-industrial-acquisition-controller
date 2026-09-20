@@ -133,7 +133,7 @@ STM32 使用 CubeMX 生成 HAL 初始化，并配置 FreeRTOS。任务按职责�
 | `monitorTask` | `AboveNormal` | 50 ms | 24V、5V 监测和状态灯 |
 | `rtdTask` | `AboveNormal` | 500 ms | MAX31865 读取和故障检测 |
 | `bridgeTask` | `Normal` | 10 ms 循环 | UART 帧解析、心跳、遥测、事件和命令处理 |
-| `modbusTask` | `Normal` | 2 ms 轮询 | RS485 Modbus RTU 收帧、寄存器读写和输出执行 |
+| `modbusTask` | `Normal` | 2 ms 轮询 | RS485 Modbus RTU `0x03`、`0x06`、`0x10` 和输出执行 |
 
 中断和任务之间通过队列解耦。UART 空闲 DMA 回调只把接收字节投递到 `s_uart_rx_queue`，协议解析和命令处理由 `bridgeTask` 完成。
 

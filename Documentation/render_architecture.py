@@ -545,7 +545,7 @@ def software_architecture():
         ("03", "acqTask", "100ms 读取 ADS1256 八通道原始值"),
         ("04", "rtdTask", "500ms 读取 MAX31865 温度"),
         ("05", "bridgeTask", "解析命令、发送心跳、遥测和事件，缓存请求结果"),
-        ("06", "modbusTask", "2ms 轮询 RS485，处理 0x03 和 0x06"),
+        ("06", "modbusTask", "2ms 轮询 RS485，处理 0x03、0x06 和 0x10"),
     ]
     y = 270
     for index, title, detail in stm_tasks:

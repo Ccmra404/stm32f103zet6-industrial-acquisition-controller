@@ -51,6 +51,27 @@ static uint16_t BuildWriteRequest(uint8_t *frame, uint8_t slave, uint16_t addres
   return AppendCrc(frame, 6U);
 }
 
+static uint16_t BuildWriteMultipleRequest(uint8_t *frame,
+                                          uint8_t slave,
+                                          uint16_t address,
+                                          const uint16_t *values,
+                                          uint16_t quantity)
+{
+  frame[0] = slave;
+  frame[1] = 0x10U;
+  frame[2] = (uint8_t)(address >> 8U);
+  frame[3] = (uint8_t)address;
+  frame[4] = (uint8_t)(quantity >> 8U);
+  frame[5] = (uint8_t)quantity;
+  frame[6] = (uint8_t)(quantity * 2U);
+  for (uint16_t index = 0U; index < quantity; index++)
+  {
+    frame[7U + (index * 2U)] = (uint8_t)(values[index] >> 8U);
+    frame[8U + (index * 2U)] = (uint8_t)values[index];
+  }
+  return AppendCrc(frame, (uint16_t)(7U + (quantity * 2U)));
+}
+
 static bool TestCrcKnownVector(void)
 {
   const uint8_t request[] = {0x01U, 0x03U, 0x00U, 0x00U, 0x00U, 0x0AU};
@@ -104,6 +125,75 @@ static bool TestWriteSingleRegister(void)
   CHECK(server.write_count == 1U);
   CHECK(server.writes[0].address == 0x20U);
   CHECK(server.writes[0].value == 0x00A5U);
+  return true;
+}
+
+static bool TestWriteMultipleRegisters(void)
+{
+  ModbusRtuServer server;
+  uint8_t request[32];
+  uint8_t response[16];
+  uint16_t values[2] = {0x0033U, 0x0444U};
+  uint16_t request_length;
+  uint16_t response_length;
+
+  ModbusRtu_Init(&server, 1U,
+                 (UINT64_C(1) << 0x20U) | (UINT64_C(1) << 0x21U));
+  request_length = BuildWriteMultipleRequest(request, 1U, 0x20U, values, 2U);
+  response_length = ModbusRtu_Process(&server, request, request_length, response, sizeof(response));
+
+  CHECK(response_length == 8U);
+  CHECK(response[0] == 1U);
+  CHECK(response[1] == 0x10U);
+  CHECK(response[2] == 0x00U);
+  CHECK(response[3] == 0x20U);
+  CHECK(response[4] == 0x00U);
+  CHECK(response[5] == 0x02U);
+  CHECK(server.registers[0x20U] == values[0]);
+  CHECK(server.registers[0x21U] == values[1]);
+  CHECK(server.write_count == 2U);
+  CHECK(server.writes[0].address == 0x20U);
+  CHECK(server.writes[1].address == 0x21U);
+  return true;
+}
+
+static bool TestWriteMultipleIllegalRange(void)
+{
+  ModbusRtuServer server;
+  uint8_t request[32];
+  uint8_t response[16];
+  uint16_t values[2] = {1U, 2U};
+  uint16_t request_length;
+  uint16_t response_length;
+
+  ModbusRtu_Init(&server, 1U, UINT64_MAX);
+  request_length = BuildWriteMultipleRequest(request, 1U, 0x3FU, values, 2U);
+  response_length = ModbusRtu_Process(&server, request, request_length, response, sizeof(response));
+
+  CHECK(response_length == 5U);
+  CHECK(response[1] == 0x90U);
+  CHECK(response[2] == MODBUS_RTU_EXCEPTION_ILLEGAL_ADDRESS);
+  return true;
+}
+
+static bool TestWriteMultipleByteCountMismatch(void)
+{
+  ModbusRtuServer server;
+  uint8_t request[32];
+  uint8_t response[16];
+  uint16_t values[2] = {1U, 2U};
+  uint16_t request_length;
+  uint16_t response_length;
+
+  ModbusRtu_Init(&server, 1U, UINT64_MAX);
+  request_length = BuildWriteMultipleRequest(request, 1U, 0x20U, values, 2U);
+  request[6] = 2U;
+  request_length = AppendCrc(request, (uint16_t)(7U + request[6]));
+  response_length = ModbusRtu_Process(&server, request, request_length, response, sizeof(response));
+
+  CHECK(response_length == 5U);
+  CHECK(response[1] == 0x90U);
+  CHECK(response[2] == MODBUS_RTU_EXCEPTION_ILLEGAL_VALUE);
   return true;
 }
 
@@ -205,6 +295,9 @@ int main(void)
       {"modbus crc known vector", TestCrcKnownVector},
       {"read holding registers", TestReadHoldingRegisters},
       {"write single register", TestWriteSingleRegister},
+      {"write multiple registers", TestWriteMultipleRegisters},
+      {"write multiple illegal range", TestWriteMultipleIllegalRange},
+      {"write multiple byte count mismatch", TestWriteMultipleByteCountMismatch},
       {"illegal address exception", TestIllegalAddressException},
       {"illegal function exception", TestIllegalFunctionException},
       {"illegal quantity exception", TestIllegalQuantityException},
