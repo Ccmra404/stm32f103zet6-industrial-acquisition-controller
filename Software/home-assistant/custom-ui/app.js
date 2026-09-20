@@ -162,6 +162,14 @@ function renderBits(element, value, count) {
   }).join("");
 }
 
+function renderRelayBits(value) {
+  const number = Number(value);
+  $("relayBits").innerHTML = Array.from({ length: 8 }, (_, index) => {
+    const active = Number.isFinite(number) && ((number >> index) & 1) === 1;
+    return `<button type="button" class="bit ${active ? "active" : ""}" data-relay="${index}" title="切换继电器 ${index + 1}">${index}</button>`;
+  }).join("");
+}
+
 function renderTelemetryTable() {
   const rows = [
     [ENTITY.linkState, "链路状态"],
@@ -217,7 +225,7 @@ function render() {
 
   renderAiGrid();
   renderBits($("diBits"), entityValue(ENTITY.di), 8);
-  renderBits($("relayBits"), entityValue(ENTITY.relay), 8);
+  renderRelayBits(entityValue(ENTITY.relay));
   renderTelemetryTable();
   appendChartPoint();
   refreshIcons();
@@ -337,6 +345,36 @@ async function sendCommand(button) {
   }
 }
 
+async function toggleRelay(index) {
+  const bit = 1 << index;
+  const current = numberValue(ENTITY.relay, 0);
+  const next = current ^ bit;
+  if (state.mode === "demo") {
+    state.latest[ENTITY.relay] = next;
+    render();
+    return;
+  }
+
+  const result = $("commandResult");
+  result.className = "alert alert-info mb-0";
+  result.textContent = `正在切换继电器 ${index + 1}...`;
+  try {
+    await haApi("/api/services/number/set_value", {
+      method: "POST",
+      body: JSON.stringify({
+        entity_id: ENTITY.relayMask,
+        value: next,
+      }),
+    });
+    result.className = "alert alert-success mb-0";
+    result.textContent = `继电器 ${index + 1} 已切换到${((next >> index) & 1) === 1 ? "吸合" : "断开"}。`;
+    await fetchStates();
+  } catch (error) {
+    result.className = "alert alert-danger mb-0";
+    result.textContent = `继电器 ${index + 1} 切换失败：${error.message}`;
+  }
+}
+
 function demoSnapshot() {
   state.demoStep += 1;
   const t = state.demoStep;
@@ -409,6 +447,11 @@ $("refreshButton").addEventListener("click", () => {
 });
 document.querySelectorAll(".command-button").forEach((button) => {
   button.addEventListener("click", () => sendCommand(button));
+});
+$("relayBits").addEventListener("click", (event) => {
+  const button = event.target.closest("[data-relay]");
+  if (!button) return;
+  toggleRelay(Number(button.dataset.relay));
 });
 
 createChart();

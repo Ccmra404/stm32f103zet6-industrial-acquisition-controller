@@ -61,6 +61,7 @@ C:\Users\zalry\.codex\.sandbox-secrets\home-assistant-owner.json
 ```
 
 自写控制台和 Mushroom 原生 Dashboard 都使用同一批 Home Assistant 实体。
+自写控制台的继电器位图支持逐路点击，可单独切换 0 到 7 路输出。
 
 ## Connect the ESP32
 

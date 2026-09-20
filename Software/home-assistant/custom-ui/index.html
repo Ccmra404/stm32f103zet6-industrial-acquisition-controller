@@ -147,6 +147,16 @@
       border-color: var(--accent);
     }
 
+    button.bit {
+      font: inherit;
+      cursor: pointer;
+    }
+
+    button.bit:disabled {
+      cursor: wait;
+      opacity: .5;
+    }
+
     .chart-shell {
       position: relative;
       height: 310px;
@@ -654,6 +664,6 @@
   <script src="https://cdn.jsdelivr.net/npm/@tabler/core@1.5.1/dist/js/tabler.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.1/dist/chart.umd.min.js"></script>
   <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js"></script>
-  <script src="/app.js"></script>
+  <script src="/app.js?v=relay1"></script>
 </body>
 </html>
