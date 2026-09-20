@@ -25,8 +25,11 @@
 </p>
 
 <p align="center">
-  <a href="Documentation/images/home-assistant-dashboard.png">
-    <img src="https://cdn.jsdelivr.net/gh/Ccmra404/stm32f103zet6-industrial-acquisition-controller@main/Documentation/images/home-assistant-dashboard.png?v=dashboard1" width="100%" alt="工业采集控制终端自写控制台">
+  <a href="Documentation/images/console-overview.webp">
+    <img src="https://cdn.jsdelivr.net/gh/Ccmra404/stm32f103zet6-industrial-acquisition-controller@main/Documentation/images/console-overview.webp?v=ui2" width="49%" alt="控制台运行总览与模拟量趋势">
+  </a>
+  <a href="Documentation/images/console-controls.webp">
+    <img src="https://cdn.jsdelivr.net/gh/Ccmra404/stm32f103zet6-industrial-acquisition-controller@main/Documentation/images/console-controls.webp?v=ui2" width="49%" alt="控制台数字量、现场总线和远程控制">
   </a>
 </p>
 
