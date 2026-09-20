@@ -3,7 +3,7 @@
 `protocol_test.c` 直接编译 `Firmware/shared/protocol`，在主机上验证：
 
 - CRC-16/CCITT-FALSE 标准向量。
-- HEARTBEAT、TELEMETRY、DIAGNOSTICS、COMMAND 和 COMMAND_ACK 编解码。
+- HEARTBEAT、TELEMETRY、DIAGNOSTICS、BUS_RX、COMMAND 和 COMMAND_ACK 编解码。
 - 小端序、序号、长度和字段值。
 - 接收状态机在垃圾字节后重新同步。
 - CRC 错误、版本错误和输出缓冲区过小时的拒绝路径。
@@ -29,6 +29,8 @@ gcc -std=c11 -Wall -Wextra -Werror \
 - 功能码 `0x10` 写多个寄存器。
 - 非法功能码、非法地址和非法数量的异常响应。
 - CRC 错误和从站地址不匹配时保持静默。
+- 主站侧读/写请求构造，以及主站与从站之间的请求响应回环。
+- 主站响应解析：寄存器数据、写回显、异常码、CRC 错误和帧长错误。
 
 在 Linux 或 GitHub Actions 中运行：
 

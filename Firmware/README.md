@@ -54,9 +54,9 @@ Download
 - 八路继电器控制和脉冲输出
 - DAC1、DAC2 模拟输出
 - AT24C32D 配置存储
-- CAN 初始化和 RS485 方向控制
-- Modbus RTU 从站 `0x03`、`0x06` 和异常响应
-- HELLO、HEARTBEAT、TELEMETRY、EVENT、DIAGNOSTICS、COMMAND 和 COMMAND_ACK
+- CAN 初始化、RS485 方向控制，以及 RS232（UART4 中断）和 CAN（FIFO0 中断）接收队列
+- Modbus RTU 从站 `0x03`、`0x06`、`0x10`，以及主站请求编解码库
+- HELLO、HEARTBEAT、TELEMETRY、EVENT、DIAGNOSTICS、BUS_RX、COMMAND 和 COMMAND_ACK
 - 任务活性监督、IWDG、栈余量和队列丢包诊断
 - 最近 16 条命令结果缓存和重复请求去重
 
@@ -86,7 +86,8 @@ ESP32-S3 当前固件包含：
 - HELLO 和 HEARTBEAT
 - TELEMETRY 接收和状态缓存
 - DIAGNOSTICS 接收和运行数据查询
-- COMMAND_ACK 接收
+- BUS_RX 接收、帧计数和 `industrial/bus` MQTT 发布
+- COMMAND_ACK 接收和递增应答序号转发
 - STM32 在线和超时检测
 - 命令队列、ACK 匹配、500 ms 超时和自动重试
 - UART0 控制台命令
