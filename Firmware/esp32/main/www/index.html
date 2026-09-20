@@ -1,0 +1,355 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>工业采集控制终端</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #101418;
+      --panel: #182027;
+      --line: #2b3741;
+      --text: #e8eef2;
+      --muted: #93a4af;
+      --ok: #39d98a;
+      --warn: #ffb020;
+      --err: #ff5c6c;
+      --accent: #45a3ff;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font: 14px/1.45 "Segoe UI", "Microsoft YaHei", sans-serif;
+    }
+    main { max-width: 1180px; margin: 0 auto; padding: 22px; }
+    header {
+      display: flex;
+      align-items: end;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 18px;
+    }
+    h1 { margin: 0; font-size: 24px; font-weight: 650; }
+    header p { margin: 4px 0 0; color: var(--muted); }
+    #clock { color: var(--muted); font-variant-numeric: tabular-nums; }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+    }
+    .wide { grid-column: span 2; }
+    .full { grid-column: 1 / -1; }
+    section {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 14px;
+    }
+    section h2 {
+      margin: 0 0 12px;
+      font-size: 13px;
+      letter-spacing: 0;
+      color: var(--muted);
+      font-weight: 650;
+      text-transform: uppercase;
+    }
+    .metric { font-size: 24px; font-weight: 650; }
+    .online { color: var(--ok); }
+    .degraded { color: var(--warn); }
+    .offline { color: var(--err); }
+    .sub { color: var(--muted); font-size: 12px; margin-top: 4px; }
+    .values { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+    .value { background: #11171c; padding: 8px; border-radius: 6px; }
+    .value span { display: block; color: var(--muted); font-size: 11px; }
+    .value strong { display: block; margin-top: 2px; font-size: 15px; }
+    form { display: flex; gap: 8px; align-items: end; flex-wrap: wrap; }
+    label { color: var(--muted); font-size: 12px; display: grid; gap: 4px; }
+    input, button {
+      font: inherit;
+      border-radius: 6px;
+      border: 1px solid var(--line);
+      padding: 8px 10px;
+    }
+    input { background: #10161b; color: var(--text); min-width: 72px; }
+    button { background: var(--accent); color: #fff; border-color: transparent; cursor: pointer; }
+    button.secondary { background: #26323b; border-color: var(--line); }
+    button:hover { filter: brightness(1.1); }
+    button:disabled { opacity: .45; cursor: default; }
+    pre, table { margin: 0; }
+    table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    th, td { text-align: left; padding: 7px 6px; border-bottom: 1px solid var(--line); }
+    th { color: var(--muted); font-weight: 600; }
+    .events { display: grid; gap: 6px; max-height: 220px; overflow: auto; }
+    .event { display: flex; justify-content: space-between; gap: 10px; padding: 7px 8px; background: #11171c; border-radius: 6px; }
+    .event code { color: var(--accent); }
+    .toolbar { display: flex; gap: 8px; align-items: center; }
+    .toolbar input { min-width: 120px; }
+    #loginPanel {
+      max-width: 420px;
+      margin: 12vh auto;
+      padding: 24px;
+    }
+    #loginPanel form { display: grid; grid-template-columns: 1fr; }
+    #loginPanel label { margin-bottom: 4px; }
+    #loginPanel input { min-width: 0; }
+    #loginPanel button { margin-top: 14px; }
+    #loginResult { min-height: 20px; margin-top: 10px; color: var(--err); }
+    #dashboard { display: none; }
+    @media (max-width: 760px) {
+      main { padding: 14px; }
+      .grid { grid-template-columns: 1fr 1fr; }
+      .wide { grid-column: span 2; }
+      header { align-items: start; flex-direction: column; }
+      .values { grid-template-columns: repeat(2, 1fr); }
+    }
+  </style>
+</head>
+<body>
+<main>
+  <section id="loginPanel">
+    <h2>控制台登录</h2>
+    <form id="loginForm">
+      <label>用户名<input id="loginUser" autocomplete="username" required></label>
+      <label>密码<input id="loginPassword" type="password" autocomplete="current-password" required></label>
+      <button type="submit">登录</button>
+    </form>
+    <div id="loginResult">请输入设备控制台凭据。</div>
+  </section>
+
+  <div id="dashboard">
+  <header>
+    <div>
+      <h1>工业采集控制终端</h1>
+      <p>STM32F103ZET6 + ESP32-S3 实时控制与远程监控</p>
+    </div>
+    <div class="toolbar">
+      <div id="clock"></div>
+      <button type="button" class="secondary" id="logout">退出登录</button>
+    </div>
+  </header>
+
+  <div class="grid">
+    <section>
+      <h2>STM32 链路</h2>
+      <div id="link" class="metric">--</div>
+      <div id="linkMeta" class="sub">等待状态...</div>
+    </section>
+    <section>
+      <h2>网络</h2>
+      <div id="network" class="metric">--</div>
+      <div id="networkMeta" class="sub">等待状态...</div>
+    </section>
+    <section>
+      <h2>电源</h2>
+      <div id="supply" class="metric">-- / --</div>
+      <div class="sub">24V / 5V</div>
+    </section>
+    <section>
+      <h2>安全状态</h2>
+      <div id="security" class="metric">--</div>
+      <div id="securityMeta" class="sub">命令门控</div>
+    </section>
+
+    <section class="wide">
+      <h2>模拟采集</h2>
+      <div id="aiValues" class="values"></div>
+      <div id="rtd" class="sub">RTD: --</div>
+    </section>
+    <section class="wide">
+      <h2>数字量</h2>
+      <div class="values">
+        <div class="value"><span>DI</span><strong id="di">--</strong></div>
+        <div class="value"><span>RELAY</span><strong id="relay">--</strong></div>
+        <div class="value"><span>FAULT</span><strong id="fault">--</strong></div>
+        <div class="value"><span>WATCHDOG</span><strong id="wdg">--</strong></div>
+      </div>
+    </section>
+
+    <section class="wide">
+      <h2>远程控制</h2>
+      <form id="commandForm">
+        <label>设备令牌<input id="token" type="password" autocomplete="off" placeholder="token"></label>
+        <label>命令
+          <select id="command">
+            <option value="relay">relay</option>
+            <option value="pulse">pulse</option>
+            <option value="dac">dac</option>
+            <option value="clear">clear</option>
+            <option value="save">save</option>
+            <option value="load">load</option>
+          </select>
+        </label>
+        <label>通道/掩码<input id="arg1" type="number" value="0" min="0" max="255"></label>
+        <label>值/时长<input id="arg2" type="number" value="0" min="0" max="60000"></label>
+        <button type="submit">发送命令</button>
+        <button type="button" class="secondary" id="clearToken">清除令牌</button>
+      </form>
+      <div id="commandResult" class="sub">令牌只保存在当前浏览器内存中。</div>
+    </section>
+
+    <section class="wide">
+      <h2>链路事件</h2>
+      <div id="events" class="events">加载中...</div>
+    </section>
+    <section class="wide">
+      <h2>命令审计</h2>
+      <div style="overflow:auto">
+        <table>
+          <thead><tr><th>时间</th><th>ID</th><th>命令</th><th>结果</th><th>详情</th></tr></thead>
+          <tbody id="audit"></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+  </div>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+let token = "";
+
+function stateClass(state) {
+  return String(state || "").toLowerCase();
+}
+
+function hex(value, width) {
+  return "0x" + Number(value || 0).toString(16).toUpperCase().padStart(width, "0");
+}
+
+async function getJson(path, options) {
+  const response = await fetch(path, options);
+  if (response.status === 401) {
+    const error = new Error("unauthorized");
+    error.status = 401;
+    throw error;
+  }
+  if (!response.ok) throw new Error(await response.text());
+  return response.json();
+}
+
+function showLogin() {
+  $("dashboard").style.display = "none";
+  $("loginPanel").style.display = "block";
+}
+
+function showDashboard() {
+  $("loginPanel").style.display = "none";
+  $("dashboard").style.display = "block";
+}
+
+function commandPayload() {
+  const command = $("command").value;
+  const a1 = Number($("arg1").value || 0);
+  const a2 = Number($("arg2").value || 0);
+  const payload = { id: Date.now() % 65535, command };
+  if (token) payload.token = token;
+  if (command === "relay" || command === "clear") payload.mask = a1;
+  if (command === "pulse") { payload.channel = a1; payload.duration_ms = a2; }
+  if (command === "dac") { payload.channel = a1; payload.value = a2; }
+  return payload;
+}
+
+$("commandForm").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  $("commandResult").textContent = "发送中...";
+  try {
+    await getJson("/api/command", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(commandPayload())
+    });
+    $("commandResult").textContent = "命令已进入队列，结果见审计表。";
+    setTimeout(refresh, 500);
+  } catch (error) {
+    $("commandResult").textContent = "发送失败: " + error.message;
+  }
+});
+
+$("token").addEventListener("input", (event) => { token = event.target.value; });
+$("clearToken").addEventListener("click", () => { token = ""; $("token").value = ""; });
+
+$("loginForm").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  $("loginResult").textContent = "登录中...";
+  try {
+    await getJson("/api/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        username: $("loginUser").value,
+        password: $("loginPassword").value
+      })
+    });
+    $("loginResult").textContent = "";
+    showDashboard();
+    await refresh();
+  } catch (error) {
+    $("loginResult").textContent = "登录失败，请检查用户名和密码。";
+  }
+});
+
+$("logout").addEventListener("click", async () => {
+  await fetch("/api/logout", { method: "POST" });
+  token = "";
+  $("token").value = "";
+  showLogin();
+});
+
+async function refresh() {
+  try {
+    const status = await getJson("/api/status");
+    $("link").textContent = status.link_state;
+    $("link").className = "metric " + stateClass(status.link_state);
+    $("linkMeta").textContent = `age=${status.link_age_ms}ms reconnects=${status.reconnects} timeouts=${status.timeouts}`;
+    $("network").textContent = status.mqtt_connected ? "MQTT 在线" : "MQTT 离线";
+    $("network").className = "metric " + (status.mqtt_connected ? "online" : "offline");
+    $("networkMeta").textContent = `${status.wifi_connected ? "WiFi" : "无网络"} | broker=${status.broker || "未配置"}`;
+    $("supply").textContent = `${status.supply_mv[0]} / ${status.supply_mv[1]} mV`;
+    $("security").textContent = status.command_allowed ? "允许控制" : "控制锁定";
+    $("security").className = "metric " + (status.command_allowed ? "online" : "offline");
+    $("securityMeta").textContent = `token=${status.command_token_configured ? "已配置" : "未配置"} | auth=${status.mqtt_auth_configured ? "已配置" : "未配置"}`;
+    $("aiValues").innerHTML = status.ai_raw.map((v, i) =>
+      `<div class="value"><span>AI${i}</span><strong>${v}</strong></div>`).join("");
+    $("rtd").textContent = `RTD: ${status.rtd_millicelsius} mC`;
+    $("di").textContent = hex(status.di_bits, 2);
+    $("relay").textContent = hex(status.relay_bits, 2);
+    $("fault").textContent = hex(status.fault_bits, 4);
+    $("wdg").textContent = status.watchdog_refresh_count;
+
+    const events = await getJson("/api/events");
+    $("events").innerHTML = events.length ? events.reverse().map((event) =>
+      `<div class="event"><code>${event.state}</code><span>${event.uptime_ms} ms</span><span>reconnects=${event.reconnect_count} timeouts=${event.timeout_count}</span></div>`).join("") : "<div class=\"sub\">暂无事件</div>";
+
+    const audit = await getJson("/api/audit");
+    $("audit").innerHTML = audit.length ? audit.reverse().map((entry) =>
+      `<tr><td>${entry.uptime_ms} ms</td><td>${entry.request_id}</td><td>${hex(entry.command_id, 4)}</td><td>${entry.result}</td><td>${entry.detail}</td></tr>`).join("") : "<tr><td colspan=\"5\" class=\"sub\">暂无记录</td></tr>";
+  } catch (error) {
+    if (error.status === 401) {
+      showLogin();
+      return;
+    }
+    $("network").textContent = "连接失败";
+    $("network").className = "metric offline";
+    $("networkMeta").textContent = error.message;
+  }
+}
+
+$("command").addEventListener("change", () => {
+  const command = $("command").value;
+  const first = command === "dac" ? 1 : command === "pulse" ? 7 : command === "clear" ? 65535 : 255;
+  $("arg1").max = first;
+  $("arg1").value = 0;
+  $("arg2").value = command === "pulse" ? 1000 : 0;
+  $("arg2").disabled = !(command === "pulse" || command === "dac");
+});
+
+setInterval(() => { $("clock").textContent = new Date().toLocaleString(); }, 1000);
+setInterval(() => {
+  if ($("dashboard").style.display !== "none") refresh();
+}, 2000);
+refresh();
+</script>
+</body>
+</html>

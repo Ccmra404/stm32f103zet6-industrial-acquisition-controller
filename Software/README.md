@@ -2,7 +2,8 @@
 
 本文说明 STM32、ESP32-S3 和共享协议的分工。软件分为两个独立固件，通过 UART 交换状态、事件和命令。
 
-当前固件已经实现实时控制、桥接、状态缓存、命令确认、WiFi 和 MQTT 遥测。OTA、LCD 和音频属于扩展接口。
+当前固件已经实现实时控制、桥接、状态缓存、命令确认、WiFi、MQTT 遥测和
+Home Assistant MQTT Discovery。OTA、LCD 和音频属于扩展接口。
 
 ## 设计目标
 
@@ -83,7 +84,7 @@ STM32 使用 FreeRTOS 和 CMSIS-RTOS V2。系统节拍为 `1 ms`，开启抢占�
 | `heartbeat` | 发送 HELLO 和心跳，判断链路离线 | `HeartbeatTask()` |
 | `command_router` | 发送命令、等待 ACK、超时重试 | `CommandRouterTask()` |
 | `console` | 解析 UART0 控制台命令 | `ConsoleTask()` |
-| `network` | WiFi、MQTT 和 JSON 遥测发布 | `NetworkTask()` |
+| `network` | WiFi、MQTT、JSON 遥测和 Home Assistant Discovery | `NetworkTask()` |
 | `state cache` | 保存最近一次遥测和在线状态 | `s_telemetry`、`s_state_lock` |
 | `bridge_protocol` | 构建和解析协议帧 | `BridgeProtocol_*()` |
 | `diagnostics` | 任务活性、栈余量和错误计数 | `DIAGNOSTICS` 帧 |
@@ -157,7 +158,7 @@ STM32 使用 CubeMX 生成 HAL 初始化，并配置 FreeRTOS。任务按职责�
 | `uart_rx` | 8 | UART 接收、协议解析和消息分发 |
 | `heartbeat` | 6 | HELLO、心跳和 3 秒离线判断 |
 | `command_router` | 6 | 命令发送、ACK 匹配和超时重试 |
-| `network` | 5 | WiFi 连接、MQTT 发布和 NVS 配置 |
+| `network` | 5 | WiFi 连接、MQTT 发布、HA Discovery 和 NVS 配置 |
 | `console` | 4 | UART0 命令行控制和状态查询 |
 
 `uart_rx` 使用独立接收缓冲，协议解析不放在中断中。`heartbeat` 使用临界区保护在线状态和最后接收时间。
@@ -205,3 +206,6 @@ Firmware/
 8. 执行断网、掉电、CRC 错误和命令重试测试。
 
 板间帧格式和消息定义见[板间协议](PROTOCOL.md)。CubeMX 的引脚、时钟、DMA 和 FreeRTOS 配置见 [STM32CubeMX 配置清单](CUBEMX.md)。
+
+自写控制台和 Mushroom 面板配置见
+[本机监控 Dashboard](home-assistant/README.md)。

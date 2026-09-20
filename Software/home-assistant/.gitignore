@@ -1,0 +1,3 @@
+homeassistant/secrets.yaml
+mosquitto/config/passwd
+homeassistant/www/mushroom.js

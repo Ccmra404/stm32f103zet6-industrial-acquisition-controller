@@ -1,0 +1,659 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>工业采集控制终端</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/core@1.5.1/dist/css/tabler.min.css">
+  <style>
+    :root {
+      --app-bg: #f4f6f9;
+      --ink: #182433;
+      --muted: #667382;
+      --line: #dce1e7;
+      --ok: #2fb344;
+      --warn: #f59f00;
+      --danger: #d63939;
+      --accent: #206bc4;
+    }
+
+    body {
+      background: var(--app-bg);
+      color: var(--ink);
+    }
+
+    .navbar-vertical {
+      width: 238px;
+    }
+
+    .navbar-brand {
+      min-height: 64px;
+    }
+
+    .page-wrapper {
+      margin-left: 238px;
+    }
+
+    .page-header {
+      margin: 0 0 18px;
+    }
+
+    .page-title {
+      font-size: 22px;
+      line-height: 1.25;
+    }
+
+    .card {
+      border-color: var(--line);
+      box-shadow: 0 1px 2px rgba(24, 36, 51, .04);
+    }
+
+    .metric-card .card-body {
+      min-height: 116px;
+    }
+
+    .metric-icon {
+      width: 38px;
+      height: 38px;
+      display: grid;
+      place-items: center;
+      border-radius: 7px;
+      background: #eaf2fb;
+      color: var(--accent);
+    }
+
+    .metric-value {
+      font-size: 25px;
+      line-height: 1;
+      font-weight: 650;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .metric-label {
+      color: var(--muted);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0;
+    }
+
+    .status-dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      background: var(--muted);
+      box-shadow: 0 0 0 4px rgba(102, 115, 130, .12);
+      display: inline-block;
+    }
+
+    .status-dot.online {
+      background: var(--ok);
+      box-shadow: 0 0 0 4px rgba(47, 179, 68, .12);
+    }
+
+    .status-dot.degraded {
+      background: var(--warn);
+      box-shadow: 0 0 0 4px rgba(245, 159, 0, .12);
+    }
+
+    .status-dot.offline {
+      background: var(--danger);
+      box-shadow: 0 0 0 4px rgba(214, 57, 57, .12);
+    }
+
+    .io-tile {
+      min-height: 76px;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      padding: 10px 11px;
+      background: #fff;
+    }
+
+    .io-tile .label {
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .io-tile .value {
+      margin-top: 5px;
+      font-size: 18px;
+      line-height: 1;
+      font-weight: 650;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .bit-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+
+    .bit {
+      min-width: 32px;
+      height: 28px;
+      display: inline-grid;
+      place-items: center;
+      border-radius: 6px;
+      border: 1px solid var(--line);
+      background: #f8fafc;
+      font-size: 11px;
+      color: var(--muted);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .bit.active {
+      color: #fff;
+      background: var(--accent);
+      border-color: var(--accent);
+    }
+
+    .chart-shell {
+      position: relative;
+      height: 310px;
+    }
+
+    .table td,
+    .table th {
+      white-space: nowrap;
+    }
+
+    .telemetry-scroll {
+      max-height: 420px;
+      overflow: auto;
+    }
+
+    .command-bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .command-bar .btn {
+      min-height: 36px;
+    }
+
+    .login-screen {
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+      background:
+        linear-gradient(135deg, rgba(32, 107, 196, .08), transparent 44%),
+        var(--app-bg);
+    }
+
+    .login-card {
+      width: min(100%, 460px);
+    }
+
+    .demo-badge {
+      background: #fff4d6;
+      color: #8a5a00;
+      border: 1px solid #f2d38a;
+    }
+
+    .app-hidden {
+      display: none !important;
+    }
+
+    .small-muted {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .value-flash {
+      animation: value-flash .45s ease-out;
+    }
+
+    @keyframes value-flash {
+      from { background: rgba(32, 107, 196, .14); }
+      to { background: transparent; }
+    }
+
+    @media (max-width: 991.98px) {
+      .navbar-vertical {
+        width: 100%;
+        position: static;
+      }
+
+      .navbar-vertical .navbar-brand {
+        min-height: 56px;
+      }
+
+      .navbar-vertical .navbar-collapse {
+        display: block;
+      }
+
+      .navbar-vertical .navbar-nav {
+        flex-direction: row;
+        overflow-x: auto;
+        padding: 0 0 10px;
+      }
+
+      .navbar-vertical .nav-item {
+        flex: 0 0 auto;
+      }
+
+      .navbar-vertical .nav-link {
+        padding: 7px 10px;
+        white-space: nowrap;
+      }
+
+      .navbar-vertical .nav-link-title {
+        display: inline;
+        margin-left: 6px;
+      }
+
+      .page-wrapper {
+        margin-left: 0;
+      }
+    }
+
+    @media (max-width: 575.98px) {
+      .page-body {
+        padding-top: 14px;
+      }
+
+      .page-header .row > .col,
+      .page-header .row > .col-auto {
+        flex: 0 0 100%;
+        max-width: 100%;
+      }
+
+      .page-header .col-auto {
+        margin-left: 0 !important;
+      }
+
+      .page-header .btn-list {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        width: 100%;
+      }
+
+      .page-header .btn-list .btn {
+        width: 100%;
+      }
+
+      .page-header .text-secondary {
+        flex-wrap: wrap;
+      }
+
+      .metric-card .card-body {
+        min-height: 102px;
+      }
+
+      .chart-shell {
+        height: 260px;
+      }
+
+      .telemetry-scroll {
+        max-height: 340px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div id="loginScreen" class="login-screen">
+    <section class="card login-card">
+      <div class="card-body p-4 p-md-5">
+        <div class="d-flex align-items-center gap-3 mb-4">
+          <span class="metric-icon">
+            <i data-lucide="radio-tower" aria-hidden="true"></i>
+          </span>
+          <div>
+            <h1 class="h2 mb-1">工业采集控制终端</h1>
+            <div class="small-muted">独立控制台 / Home Assistant 数据接入</div>
+          </div>
+        </div>
+
+        <div class="alert alert-info mb-4" role="alert">
+          可先进入演示模式查看完整界面。真实模式只把凭据保存在当前浏览器会话中。
+        </div>
+
+        <form id="loginForm">
+          <div class="mb-3">
+            <label class="form-label" for="username">账号</label>
+            <input class="form-control" id="username" value="admin" autocomplete="username" placeholder="admin">
+          </div>
+          <div class="mb-3">
+            <label class="form-label" for="password">密码</label>
+            <input class="form-control" id="password" type="password" autocomplete="current-password">
+          </div>
+          <div class="d-grid gap-2">
+            <button class="btn btn-primary" type="submit">
+              <i data-lucide="log-in" aria-hidden="true"></i>
+              登录 Home Assistant
+            </button>
+            <button class="btn btn-outline-secondary" id="demoLogin" type="button">
+              <i data-lucide="play" aria-hidden="true"></i>
+              进入演示模式
+            </button>
+          </div>
+          <div id="loginError" class="text-danger small mt-3" aria-live="polite"></div>
+        </form>
+      </div>
+    </section>
+  </div>
+
+  <div id="app" class="page app-hidden">
+    <aside class="navbar navbar-vertical navbar-expand-lg" data-bs-theme="dark">
+      <div class="container-fluid">
+        <h1 class="navbar-brand navbar-brand-autodark">
+          <span class="navbar-brand-image bg-blue-lt rounded d-grid place-items-center me-2" style="width:34px;height:34px">
+            <i data-lucide="factory" aria-hidden="true"></i>
+          </span>
+          <span>EDGE CONTROL</span>
+        </h1>
+        <div class="collapse navbar-collapse show" id="sidebar-menu">
+          <ul class="navbar-nav pt-lg-3">
+            <li class="nav-item active">
+              <a class="nav-link" href="#overview">
+                <span class="nav-link-icon"><i data-lucide="layout-dashboard" aria-hidden="true"></i></span>
+                <span class="nav-link-title">运行总览</span>
+              </a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link" href="#analog">
+                <span class="nav-link-icon"><i data-lucide="activity" aria-hidden="true"></i></span>
+                <span class="nav-link-title">模拟采集</span>
+              </a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link" href="#digital">
+                <span class="nav-link-icon"><i data-lucide="binary" aria-hidden="true"></i></span>
+                <span class="nav-link-title">数字量</span>
+              </a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link" href="#commands">
+                <span class="nav-link-icon"><i data-lucide="terminal-square" aria-hidden="true"></i></span>
+                <span class="nav-link-title">远程控制</span>
+              </a>
+            </li>
+          </ul>
+        </div>
+      </div>
+    </aside>
+
+    <div class="page-wrapper">
+      <div class="page-body">
+        <div class="container-xl">
+          <header class="page-header d-print-none">
+            <div class="row align-items-center g-3">
+              <div class="col">
+                <div class="page-pretitle">STM32F103ZET6 + ESP32-S3</div>
+                <h2 class="page-title">工业采集控制终端</h2>
+                <div class="text-secondary mt-1 d-flex align-items-center gap-2">
+                  <span id="statusDot" class="status-dot"></span>
+                  <span id="connectionText">等待连接</span>
+                  <span class="text-secondary">·</span>
+                  <span id="lastUpdate">未同步</span>
+                  <span id="demoBadge" class="badge demo-badge app-hidden">演示数据</span>
+                </div>
+              </div>
+              <div class="col-auto ms-auto d-print-none">
+                <div class="btn-list">
+                  <button class="btn btn-outline-secondary" id="refreshButton" type="button">
+                    <i data-lucide="refresh-cw" aria-hidden="true"></i>
+                    刷新
+                  </button>
+                  <button class="btn btn-outline-danger" id="logoutButton" type="button">
+                    <i data-lucide="log-out" aria-hidden="true"></i>
+                    退出
+                  </button>
+                </div>
+              </div>
+            </div>
+          </header>
+
+          <div id="errorAlert" class="alert alert-danger app-hidden" role="alert"></div>
+
+          <section id="overview" class="row row-deck row-cards mb-3">
+            <div class="col-sm-6 col-xl-3">
+              <article class="card metric-card">
+                <div class="card-body">
+                  <div class="d-flex justify-content-between align-items-start">
+                    <div>
+                      <div class="metric-label">STM32 链路</div>
+                      <div id="linkState" class="metric-value mt-3">--</div>
+                    </div>
+                    <span class="metric-icon"><i data-lucide="cable" aria-hidden="true"></i></span>
+                  </div>
+                  <div id="linkMeta" class="small-muted mt-2">等待数据</div>
+                </div>
+              </article>
+            </div>
+            <div class="col-sm-6 col-xl-3">
+              <article class="card metric-card">
+                <div class="card-body">
+                  <div class="d-flex justify-content-between align-items-start">
+                    <div>
+                      <div class="metric-label">AI0 原始值</div>
+                      <div id="ai0Value" class="metric-value mt-3">--</div>
+                    </div>
+                    <span class="metric-icon"><i data-lucide="activity" aria-hidden="true"></i></span>
+                  </div>
+                  <div id="aiMeta" class="small-muted mt-2">8 路模拟输入</div>
+                </div>
+              </article>
+            </div>
+            <div class="col-sm-6 col-xl-3">
+              <article class="card metric-card">
+                <div class="card-body">
+                  <div class="d-flex justify-content-between align-items-start">
+                    <div>
+                      <div class="metric-label">RTD 温度</div>
+                      <div id="rtdValue" class="metric-value mt-3">--</div>
+                    </div>
+                    <span class="metric-icon"><i data-lucide="thermometer" aria-hidden="true"></i></span>
+                  </div>
+                  <div class="small-muted mt-2">MAX31865 铂电阻采集</div>
+                </div>
+              </article>
+            </div>
+            <div class="col-sm-6 col-xl-3">
+              <article class="card metric-card">
+                <div class="card-body">
+                  <div class="d-flex justify-content-between align-items-start">
+                    <div>
+                      <div class="metric-label">电源监测</div>
+                      <div id="supplyValue" class="metric-value mt-3">--</div>
+                    </div>
+                    <span class="metric-icon"><i data-lucide="zap" aria-hidden="true"></i></span>
+                  </div>
+                  <div id="supplyMeta" class="small-muted mt-2">24V / 5V</div>
+                </div>
+              </article>
+            </div>
+          </section>
+
+          <section id="analog" class="row row-deck row-cards mb-3">
+            <div class="col-lg-8">
+              <article class="card">
+                <div class="card-header">
+                  <div>
+                    <h3 class="card-title">模拟量趋势</h3>
+                    <div class="card-subtitle">AI0 - AI7 最近采样</div>
+                  </div>
+                  <div class="card-actions">
+                    <span class="badge bg-blue-lt" id="sampleCount">0 samples</span>
+                  </div>
+                </div>
+                <div class="card-body">
+                  <div class="chart-shell">
+                    <canvas id="aiChart" aria-label="模拟量趋势图"></canvas>
+                  </div>
+                </div>
+              </article>
+            </div>
+            <div class="col-lg-4">
+              <article class="card h-100">
+                <div class="card-header">
+                  <h3 class="card-title">实时通道</h3>
+                </div>
+                <div class="card-body">
+                  <div id="aiGrid" class="row g-2"></div>
+                </div>
+              </article>
+            </div>
+          </section>
+
+          <section id="digital" class="row row-deck row-cards mb-3">
+            <div class="col-lg-4">
+              <article class="card h-100">
+                <div class="card-header">
+                  <h3 class="card-title">数字输入 DI</h3>
+                </div>
+                <div class="card-body">
+                  <div id="diBits" class="bit-row"></div>
+                </div>
+              </article>
+            </div>
+            <div class="col-lg-4">
+              <article class="card h-100">
+                <div class="card-header">
+                  <h3 class="card-title">继电器输出</h3>
+                </div>
+                <div class="card-body">
+                  <div id="relayBits" class="bit-row"></div>
+                </div>
+              </article>
+            </div>
+            <div class="col-lg-4">
+              <article class="card h-100">
+                <div class="card-header">
+                  <h3 class="card-title">故障与看门狗</h3>
+                </div>
+                <div class="card-body">
+                  <div class="row g-2">
+                    <div class="col-6">
+                      <div class="io-tile">
+                        <div class="label">FAULT</div>
+                        <div id="faultValue" class="value">--</div>
+                      </div>
+                    </div>
+                    <div class="col-6">
+                      <div class="io-tile">
+                        <div class="label">WATCHDOG</div>
+                        <div id="watchdogValue" class="value">--</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </article>
+            </div>
+          </section>
+
+          <section id="commands" class="row row-deck row-cards mb-3">
+            <div class="col-lg-7">
+              <article class="card h-100">
+                <div class="card-header">
+                  <div>
+                    <h3 class="card-title">远程控制</h3>
+                    <div class="card-subtitle">通过 Home Assistant 服务调用下发</div>
+                  </div>
+                  <div class="card-actions">
+                    <span id="commandMode" class="badge bg-secondary-lt">只读</span>
+                  </div>
+                </div>
+                <div class="card-body">
+                  <div class="command-bar mb-3">
+                    <button class="btn btn-outline-secondary command-button" data-command="relay" data-mask="0">
+                      <i data-lucide="power-off" aria-hidden="true"></i>
+                      全部断开
+                    </button>
+                    <button class="btn btn-primary command-button" data-command="relay" data-mask="255">
+                      <i data-lucide="power" aria-hidden="true"></i>
+                      全部吸合
+                    </button>
+                    <button class="btn btn-outline-primary command-button" data-command="pulse" data-channel="0" data-duration="1000">
+                      <i data-lucide="timer" aria-hidden="true"></i>
+                      通道 1 脉冲
+                    </button>
+                    <button class="btn btn-outline-warning command-button" data-command="clear" data-mask="65535">
+                      <i data-lucide="eraser" aria-hidden="true"></i>
+                      清除故障
+                    </button>
+                    <button class="btn btn-outline-secondary command-button" data-command="save">
+                      <i data-lucide="save" aria-hidden="true"></i>
+                      保存配置
+                    </button>
+                    <button class="btn btn-outline-secondary command-button" data-command="load">
+                      <i data-lucide="folder-open" aria-hidden="true"></i>
+                      加载配置
+                    </button>
+                  </div>
+                  <div id="commandResult" class="alert alert-secondary mb-0" role="status">
+                    登录真实设备后可发送控制命令。
+                  </div>
+                </div>
+              </article>
+            </div>
+            <div class="col-lg-5">
+              <article class="card h-100">
+                <div class="card-header">
+                  <h3 class="card-title">链路诊断</h3>
+                </div>
+                <div class="card-body">
+                  <div class="row g-2">
+                    <div class="col-6">
+                      <div class="io-tile">
+                        <div class="label">LINK AGE</div>
+                        <div id="linkAge" class="value">--</div>
+                      </div>
+                    </div>
+                    <div class="col-6">
+                      <div class="label">RECONNECTS</div>
+                      <div id="reconnects" class="value">--</div>
+                    </div>
+                    <div class="col-6">
+                      <div class="label">TIMEOUTS</div>
+                      <div id="timeouts" class="value">--</div>
+                    </div>
+                    <div class="col-6">
+                      <div class="label">TASK ALIVE</div>
+                      <div id="alive" class="value">--</div>
+                    </div>
+                  </div>
+                </div>
+              </article>
+            </div>
+          </section>
+
+          <section class="card mb-3">
+            <div class="card-header">
+              <h3 class="card-title">最新遥测</h3>
+              <div class="card-actions small-muted">字段来自 ESP32-S3 MQTT 上报</div>
+            </div>
+            <div class="table-responsive telemetry-scroll">
+              <table class="table table-vcenter card-table">
+                <thead>
+                  <tr>
+                    <th>字段</th>
+                    <th>值</th>
+                    <th>时间</th>
+                  </tr>
+                </thead>
+                <tbody id="telemetryTable"></tbody>
+              </table>
+            </div>
+          </section>
+
+          <footer class="footer footer-transparent d-print-none">
+            <div class="container-xl">
+              <div class="text-center text-secondary">
+                工业采集控制终端 · STM32 + ESP32 + Home Assistant
+              </div>
+            </div>
+          </footer>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@tabler/core@1.5.1/dist/js/tabler.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.1/dist/chart.umd.min.js"></script>
+  <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>

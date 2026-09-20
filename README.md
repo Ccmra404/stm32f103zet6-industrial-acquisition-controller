@@ -34,12 +34,13 @@
 | 层面 | 当前实现 |
 | --- | --- |
 | 实时软件 | FreeRTOS 1 ms tick、抢占式调度、CMSIS-RTOS V2、6 个业务任务、任务活性监督、IWDG、ADC DMA、UART DMA 空闲接收和继电器脉冲定时器 |
-| 桥接软件 | UART1 解析、命令队列、ACK 重试、串口控制台、WiFi Station 和 MQTT 遥测发布 |
+| 桥接软件 | UART1 解析、命令队列、ACK 重试、串口控制台、HTTPS Web 控制台、WiFi Station、MQTT 遥测和 Home Assistant Discovery |
 | 通信协议 | `AA 55` 帧头、版本、消息类型、序号、长度、256 字节载荷和 CRC-16 |
 | 状态管理 | `device_state` 统一保存设备快照，使用 mutex 保证任务读取一致性 |
 | 采集控制 | 8 路 24 位模拟采集、PT100 或 PT1000 温度采集、8 路隔离数字输入、8 路继电器和 2 路模拟输出 |
 | 现场通信 | RS485、RS232 和 CAN，收发器与控制侧隔离 |
 | Modbus RTU | RS485 从站，支持 `0x03` 读保持寄存器、`0x06` 写单寄存器和 `0x10` 写多个寄存器 |
+| 监控界面 | 自写 Tabler 控制台、Home Assistant 实体模型和 Mushroom 原生 Dashboard |
 | 工程实现 | STM32 与 ESP32-S3 两套固件独立构建，共享协议和 Modbus 通过 GitHub Actions 自动测试 |
 
 已完成代码级功能：
@@ -47,6 +48,8 @@
 - STM32 实时采集、控制、状态发布、事件上报和命令处理。
 - ESP32-S3 遥测接收、状态缓存、心跳发送、在线判断、命令队列和 ACK 重试。
 - ESP32-S3 通过 WiFi 连接 MQTT Broker，每 2 秒发布一次 JSON 遥测。
+- ESP32-S3 自动发布 Home Assistant MQTT Discovery，创建遥测、诊断和控制实体。
+- 自写 Tabler 控制台通过 Home Assistant API 显示实时数据并下发控制命令。
 - 继电器掩码、继电器脉冲、模拟输出、故障清除和配置保存命令。
 - EEPROM 参数结构包含 `magic`、`version` 和 `crc`，校验失败时回退默认值。
 - STM32 保存最近 16 条命令结果，重复请求不会再次执行输出。
@@ -55,7 +58,7 @@
 
 保留的扩展入口：
 
-- ESP32-S3 的 WebSocket、OTA 和远程参数服务。
+- ESP32-S3 的 OTA 和远程参数服务。
 - LCD、音频和本地人机界面。
 
 ## 软件系统
@@ -296,6 +299,7 @@ STM32 通过 RS485 提供 Modbus RTU 从站，从站地址为 `1`。支持 `0x03
 | 共享协议 | GCC | `Firmware/tests/protocol_test.c` | GitHub Actions 自动测试 |
 | Modbus RTU | GCC | `Firmware/tests/modbus_test.c` | GitHub Actions 自动测试 |
 | ESP32 组件 | IDF Component Manager | `Firmware/esp32/main/idf_component.yml` | MQTT 1.1.0 |
+| 板间 UART | 115200 8N1 | `PA9/PA10` 与 `IO18/IO17` | 已通过实际链路验证 |
 
 构建 STM32 固件：
 
@@ -413,7 +417,7 @@ Documentation/
 
 ## 后续方向
 
-- 接入 WebSocket 和 OTA，完成远程参数服务与固件升级。
+- 完成 OTA 固件升级和远程参数服务。
 - 增加 LCD 状态页、报警页和参数配置页。
 - 完成 ADS1256、MAX31865 和模拟输出的实板标定。
 - 增加 Modbus RTU 主站轮询和更多现场设备寄存器映射。
@@ -428,8 +432,10 @@ Documentation/
 | [板间协议](Software/PROTOCOL.md) | UART 帧、消息类型、命令和错误码 |
 | [Modbus RTU 从站](Software/MODBUS.md) | RS485 寄存器映射、功能码和异常响应 |
 | [WiFi 与 MQTT](Software/NETWORK.md) | 网络配置、MQTT 主题和遥测 JSON |
+| [Home Assistant 控制台](Software/home-assistant/README.md) | MQTT Discovery、自写 Tabler 控制台和 Mushroom Dashboard |
 | [CubeMX 配置清单](Software/CUBEMX.md) | 时钟、外设、GPIO、DMA 和 FreeRTOS 配置 |
 | [固件说明](Firmware/README.md) | 两套固件的构建、接线和功能范围 |
+| [双板 UART 验证](Firmware/validation/README.md) | 尚硅谷 F103 与 ESP32-S3 的最小 PING/PONG 验证 |
 | [协议测试](Firmware/tests/README.md) | 主机侧帧编解码、CRC 和异常路径测试 |
 | [硬件设计说明](Documentation/hardware.md) | 电源、主控、模拟链路、隔离接口、温度和存储 |
 | [IO 与接口规划](Documentation/io-map.md) | STM32 与 ESP32-S3 的完整引脚分配 |

@@ -1,7 +1,14 @@
 idf_component_register(
     SRCS
         "app_main.c"
+        "link_health.c"
+        "network_security.c"
+        "web_console.c"
         "../../shared/protocol/bridge_protocol.c"
+    EMBED_FILES
+        "certs/servercert.pem"
+        "certs/serverkey.pem"
+        "www/index.html"
     INCLUDE_DIRS
         "."
         "../../shared/protocol"
@@ -9,9 +16,12 @@ idf_component_register(
         esp_driver_gpio
         esp_driver_uart
         esp_event
+        esp_http_server
+        esp_https_server
         esp_netif
         esp_timer
         esp_wifi
+        cjson
         mqtt
         nvs_flash
 )

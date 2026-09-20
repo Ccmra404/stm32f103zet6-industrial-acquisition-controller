@@ -1,0 +1,25 @@
+default_config:
+
+homeassistant:
+  name: Industrial Controller
+  time_zone: Asia/Shanghai
+  country: CN
+
+http:
+  use_x_forwarded_for: true
+  trusted_proxies:
+    - 127.0.0.1
+
+frontend:
+  extra_module_url:
+    - /local/mushroom.js?v=5.2.3
+
+lovelace:
+  mode: storage
+  dashboards:
+    industrial-controller:
+      mode: yaml
+      title: 工业采集控制终端
+      icon: mdi:factory
+      show_in_sidebar: true
+      filename: industrial_controller_dashboard.yaml

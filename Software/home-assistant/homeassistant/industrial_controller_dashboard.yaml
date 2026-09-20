@@ -1,0 +1,327 @@
+title: Industrial Controller
+
+views:
+  - title: 运行总览
+    path: overview
+    icon: mdi:factory
+    type: sections
+    max_columns: 4
+    dense_section_placement: true
+    sections:
+      - type: grid
+        cards:
+          - type: custom:mushroom-title-card
+            title: 工业采集控制终端
+            subtitle: STM32F103ZET6 + ESP32-S3
+
+          - type: custom:mushroom-chips-card
+            alignment: start
+            chips:
+              - type: entity
+                entity: binary_sensor.industrial_controller_gateway_online
+                icon: mdi:access-point-network
+                icon_color: >-
+                  {{ 'green' if is_state('binary_sensor.industrial_controller_gateway_online', 'on') else 'red' }}
+                content_info: state
+              - type: entity
+                entity: sensor.industrial_controller_link_state
+                icon: mdi:lan-connect
+                icon_color: >-
+                  {% if is_state('sensor.industrial_controller_link_state', 'ONLINE') %}
+                    green
+                  {% elif is_state('sensor.industrial_controller_link_state', 'DEGRADED') %}
+                    orange
+                  {% else %}
+                    red
+                  {% endif %}
+                content_info: state
+              - type: entity
+                entity: sensor.industrial_controller_rtd_temperature
+                icon: mdi:thermometer
+                content_info: state
+
+          - type: grid
+            columns: 2
+            square: false
+            cards:
+              - type: custom:mushroom-template-card
+                primary: STM32 链路
+                secondary: >-
+                  {{ states('sensor.industrial_controller_link_state') }} ·
+                  延迟 {{ states('sensor.industrial_controller_link_age') }} ms
+                icon: mdi:cable-data
+                icon_color: >-
+                  {% if is_state('sensor.industrial_controller_link_state', 'ONLINE') %}
+                    green
+                  {% elif is_state('sensor.industrial_controller_link_state', 'DEGRADED') %}
+                    orange
+                  {% else %}
+                    red
+                  {% endif %}
+                entity: sensor.industrial_controller_link_state
+                tap_action:
+                  action: more-info
+              - type: custom:mushroom-entity-card
+                entity: sensor.industrial_controller_rtd_temperature
+                name: RTD 温度
+                icon: mdi:thermometer
+                icon_color: deep-orange
+              - type: custom:mushroom-template-card
+                primary: 电源监测
+                secondary: >-
+                  24V {{ states('sensor.industrial_controller_supply_24v') }} V ·
+                  5V {{ states('sensor.industrial_controller_supply_5v') }} V
+                icon: mdi:power-plug-outline
+                icon_color: blue
+                entity: sensor.industrial_controller_supply_24v
+                tap_action:
+                  action: more-info
+              - type: custom:mushroom-template-card
+                primary: 继电器输出
+                secondary: >-
+                  当前掩码 {{ states('sensor.industrial_controller_relay_bitmap') }} ·
+                  故障 {{ states('sensor.industrial_controller_fault_bitmap') }}
+                icon: mdi:toggle-switch
+                icon_color: >-
+                  {{ 'red' if is_state('binary_sensor.industrial_controller_fault_active', 'on') else 'blue' }}
+                entity: sensor.industrial_controller_relay_bitmap
+                tap_action:
+                  action: more-info
+
+  - title: 模拟采集
+    path: analog
+    icon: mdi:sine-wave
+    type: sections
+    max_columns: 4
+    dense_section_placement: true
+    sections:
+      - type: grid
+        cards:
+          - type: heading
+            heading: 八路模拟输入
+            icon: mdi:waveform
+          - type: grid
+            columns: 4
+            square: false
+            cards:
+              - type: custom:mushroom-entity-card
+                entity: sensor.industrial_controller_ai_0
+                name: AI0
+                icon: mdi:chart-line
+              - type: custom:mushroom-entity-card
+                entity: sensor.industrial_controller_ai_1
+                name: AI1
+                icon: mdi:chart-line
+              - type: custom:mushroom-entity-card
+                entity: sensor.industrial_controller_ai_2
+                name: AI2
+                icon: mdi:chart-line
+              - type: custom:mushroom-entity-card
+                entity: sensor.industrial_controller_ai_3
+                name: AI3
+                icon: mdi:chart-line
+              - type: custom:mushroom-entity-card
+                entity: sensor.industrial_controller_ai_4
+                name: AI4
+                icon: mdi:chart-line
+              - type: custom:mushroom-entity-card
+                entity: sensor.industrial_controller_ai_5
+                name: AI5
+                icon: mdi:chart-line
+              - type: custom:mushroom-entity-card
+                entity: sensor.industrial_controller_ai_6
+                name: AI6
+                icon: mdi:chart-line
+              - type: custom:mushroom-entity-card
+                entity: sensor.industrial_controller_ai_7
+                name: AI7
+                icon: mdi:chart-line
+
+      - type: grid
+        cards:
+          - type: heading
+            heading: 最近一小时趋势
+            icon: mdi:chart-timeline-variant
+          - type: history-graph
+            hours_to_show: 1
+            refresh_interval: 5
+            entities:
+              - entity: sensor.industrial_controller_ai_0
+                name: AI0
+              - entity: sensor.industrial_controller_ai_1
+                name: AI1
+              - entity: sensor.industrial_controller_ai_2
+                name: AI2
+              - entity: sensor.industrial_controller_ai_3
+                name: AI3
+              - entity: sensor.industrial_controller_ai_4
+                name: AI4
+              - entity: sensor.industrial_controller_ai_5
+                name: AI5
+              - entity: sensor.industrial_controller_ai_6
+                name: AI6
+              - entity: sensor.industrial_controller_ai_7
+                name: AI7
+
+  - title: 远程控制
+    path: control
+    icon: mdi:remote
+    type: sections
+    max_columns: 4
+    dense_section_placement: true
+    sections:
+      - type: grid
+        cards:
+          - type: heading
+            heading: 继电器控制
+            icon: mdi:toggle-switch
+          - type: grid
+            columns: 2
+            square: false
+            cards:
+              - type: custom:mushroom-entity-card
+                entity: button.industrial_controller_all_relays_on
+                name: 全部吸合
+                icon: mdi:power
+                icon_color: blue
+                tap_action:
+                  action: perform-action
+                  perform_action: button.press
+                  target:
+                    entity_id: button.industrial_controller_all_relays_on
+              - type: custom:mushroom-entity-card
+                entity: button.industrial_controller_all_relays_off
+                name: 全部断开
+                icon: mdi:power-off
+                icon_color: grey
+                tap_action:
+                  action: perform-action
+                  perform_action: button.press
+                  target:
+                    entity_id: button.industrial_controller_all_relays_off
+              - type: custom:mushroom-entity-card
+                entity: button.industrial_controller_pulse_relay_1
+                name: 通道 1 脉冲
+                icon: mdi:timer
+                icon_color: cyan
+                tap_action:
+                  action: perform-action
+                  perform_action: button.press
+                  target:
+                    entity_id: button.industrial_controller_pulse_relay_1
+              - type: custom:mushroom-entity-card
+                entity: button.industrial_controller_clear_faults
+                name: 清除故障
+                icon: mdi:eraser
+                icon_color: orange
+                tap_action:
+                  action: perform-action
+                  perform_action: button.press
+                  target:
+                    entity_id: button.industrial_controller_clear_faults
+
+          - type: custom:mushroom-number-card
+            entity: number.industrial_controller_relay_mask
+            name: 继电器掩码
+            icon: mdi:dip-switch
+            display_mode: buttons
+
+      - type: grid
+        cards:
+          - type: heading
+            heading: 配置管理
+            icon: mdi:database-cog-outline
+          - type: grid
+            columns: 2
+            square: false
+            cards:
+              - type: custom:mushroom-entity-card
+                entity: button.industrial_controller_save_config
+                name: 保存配置
+                icon: mdi:content-save
+                tap_action:
+                  action: perform-action
+                  perform_action: button.press
+                  target:
+                    entity_id: button.industrial_controller_save_config
+              - type: custom:mushroom-entity-card
+                entity: button.industrial_controller_load_config
+                name: 加载配置
+                icon: mdi:folder-open
+                tap_action:
+                  action: perform-action
+                  perform_action: button.press
+                  target:
+                    entity_id: button.industrial_controller_load_config
+          - type: custom:mushroom-entity-card
+            entity: sensor.industrial_controller_last_ack
+            name: 最近命令结果
+            icon: mdi:check-circle-outline
+
+  - title: 诊断
+    path: diagnostics
+    icon: mdi:stethoscope
+    type: sections
+    max_columns: 4
+    dense_section_placement: true
+    sections:
+      - type: grid
+        cards:
+          - type: heading
+            heading: 链路诊断
+            icon: mdi:lan-pending
+          - type: custom:mushroom-entity-card
+            entity: sensor.industrial_controller_link_age
+            name: 链路延迟
+            icon: mdi:timer-outline
+          - type: custom:mushroom-entity-card
+            entity: sensor.industrial_controller_reconnects
+            name: 重连次数
+            icon: mdi:restart
+          - type: custom:mushroom-entity-card
+            entity: sensor.industrial_controller_timeouts
+            name: 超时次数
+            icon: mdi:timer-alert-outline
+
+      - type: grid
+        cards:
+          - type: heading
+            heading: 运行状态
+            icon: mdi:heart-pulse
+          - type: custom:mushroom-entity-card
+            entity: sensor.industrial_controller_di_bitmap
+            name: DI 位图
+            icon: mdi:sign-direction
+          - type: custom:mushroom-entity-card
+            entity: sensor.industrial_controller_fault_bitmap
+            name: 故障位图
+            icon: mdi:alert-circle-outline
+          - type: custom:mushroom-entity-card
+            entity: sensor.industrial_controller_alive_bitmap
+            name: 任务存活位图
+            icon: mdi:heart-pulse
+          - type: custom:mushroom-entity-card
+            entity: sensor.industrial_controller_watchdog
+            name: 看门狗刷新
+            icon: mdi:watchdog
+
+      - type: grid
+        cards:
+          - type: heading
+            heading: 最近事件
+            icon: mdi:history
+          - type: custom:mushroom-entity-card
+            entity: sensor.industrial_controller_last_event
+            name: 最近链路事件
+            icon: mdi:history
+          - type: conditional
+            conditions:
+              - entity: binary_sensor.industrial_controller_fault_active
+                state: "on"
+            card:
+              type: custom:mushroom-template-card
+              primary: 当前存在故障
+              secondary: 故障位图 {{ states('sensor.industrial_controller_fault_bitmap') }}
+              icon: mdi:alert
+              icon_color: red
+              entity: binary_sensor.industrial_controller_fault_active

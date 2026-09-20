@@ -31,6 +31,9 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#if defined(UART4_VALIDATION) || defined(UART1_VALIDATION)
+#include <string.h>
+#endif
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -58,7 +61,9 @@ IWDG_HandleTypeDef hiwdg;
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 void MX_FREERTOS_Init(void);
+#if !defined(UART4_VALIDATION) && !defined(UART1_VALIDATION)
 static void MX_IWDG_Init(void);
+#endif
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -72,8 +77,85 @@ static void MX_IWDG_Init(void);
   * @brief  The application entry point.
   * @retval int
   */
+#if defined(UART4_VALIDATION) || defined(UART1_VALIDATION)
+static void ValidationWrite(const char *text)
+{
+  if (text != 0)
+  {
+#ifdef UART4_VALIDATION
+    (void)HAL_UART_Transmit(&huart4,
+                            (uint8_t *)text,
+                            (uint16_t)strlen(text),
+                            100U);
+#else
+    (void)HAL_UART_Transmit(&huart1,
+                            (uint8_t *)text,
+                            (uint16_t)strlen(text),
+                            100U);
+#endif
+  }
+}
+#endif
+
 int main(void)
 {
+#if defined(UART4_VALIDATION) || defined(UART1_VALIDATION)
+  char line[64];
+  uint16_t line_length = 0U;
+  uint32_t last_alive_tick = 0U;
+
+  HAL_Init();
+  SystemClock_Config();
+  MX_GPIO_Init();
+#ifdef UART4_VALIDATION
+  MX_UART4_Init();
+  MX_USART1_UART_Init();
+#else
+  MX_USART1_UART_Init();
+#endif
+
+#ifdef UART4_VALIDATION
+  ValidationWrite("\r\nSTM32 UART4 validation\r\n");
+#else
+  ValidationWrite("\r\nSTM32 USART1 validation\r\n");
+#endif
+
+  for (;;)
+  {
+    uint8_t byte;
+
+#ifdef UART4_VALIDATION
+    if (HAL_UART_Receive(&huart4, &byte, 1U, 10U) == HAL_OK)
+#else
+    if (HAL_UART_Receive(&huart1, &byte, 1U, 10U) == HAL_OK)
+#endif
+    {
+      if ((byte == '\r') || (byte == '\n'))
+      {
+        if (line_length > 0U)
+        {
+          line[line_length] = '\0';
+          if (strcmp(line, "PING") == 0)
+          {
+            ValidationWrite("PONG\r\n");
+          }
+          line_length = 0U;
+        }
+      }
+      else if (line_length < (sizeof(line) - 1U))
+      {
+        line[line_length++] = (char)byte;
+      }
+    }
+
+    if ((HAL_GetTick() - last_alive_tick) >= 1000U)
+    {
+      last_alive_tick = HAL_GetTick();
+      ValidationWrite("STM32_ALIVE\r\n");
+      HAL_GPIO_TogglePin(STATUS_LED_GPIO_Port, STATUS_LED_Pin);
+    }
+  }
+#else
   /* USER CODE BEGIN 1 */
 
   /* USER CODE END 1 */
@@ -132,6 +214,7 @@ int main(void)
     /* USER CODE BEGIN 3 */
   }
   /* USER CODE END 3 */
+#endif
 }
 
 /**
@@ -182,6 +265,7 @@ void SystemClock_Config(void)
 
 /* USER CODE BEGIN 4 */
 
+#if !defined(UART4_VALIDATION) && !defined(UART1_VALIDATION)
 static void MX_IWDG_Init(void)
 {
   hiwdg.Instance = IWDG;
@@ -192,6 +276,7 @@ static void MX_IWDG_Init(void)
     Error_Handler();
   }
 }
+#endif
 
 /* USER CODE END 4 */
 

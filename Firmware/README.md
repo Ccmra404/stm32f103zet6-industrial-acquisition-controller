@@ -91,6 +91,7 @@ ESP32-S3 当前固件包含：
 - 命令队列、ACK 匹配、500 ms 超时和自动重试
 - UART0 控制台命令
 - WiFi Station、NVS 网络配置和 MQTT JSON 遥测
+- Home Assistant MQTT Discovery、可用性主题和自动实体注册
 
 控制台命令：
 
@@ -104,10 +105,16 @@ load
 status
 wifi <ssid> <password>
 mqtt <uri>
+mqttauth <user> <password>
+token <token>
+tb <device-access-token>
 reconnect
 ```
 
 ESP-IDF 6.1 的 MQTT 组件由 `Firmware/esp32/main/idf_component.yml` 管理，首次构建会下载 `espressif/mqtt`。
+
+Home Assistant 和 Mushroom 控制台配置见
+[硬件监控 Dashboard](../Software/home-assistant/README.md)。
 
 LCD 和音频模块属于可选外设，当前固件不初始化它们，也不在 HELLO 能力位中声明。
 
@@ -127,6 +134,8 @@ gcc -std=c11 -Wall -Wextra -Werror \
 ```
 
 测试说明见 [协议测试](tests/README.md)。GitHub Actions 会自动运行协议测试和 ESP32-S3 构建。
+
+如果需要先验证两块开发板的 UART 连线，使用 [双开发板 UART 验证](validation/README.md)。验证工程使用 `USART1 PA9/PA10`，实际链路已经通过连续 `STM32_ALIVE` 和 `PONG` 日志验证。
 
 ## 当前验证状态
 
