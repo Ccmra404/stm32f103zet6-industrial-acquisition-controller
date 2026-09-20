@@ -238,7 +238,7 @@ industrial/bus
 {"bus":"can","id":291,"length":8,"data":"10 20 30 40 50 60 70 80","count":7}
 ```
 
-`count` 为对应总线上电后的累计接收帧数，可用于确认接收路径是否在工作。Home Assistant 会自动发现 `sensor.industrial_controller_last_bus_frame`，属性中包含 `id`、`length`、`data` 和 `count`。
+`count` 为对应总线上电后的累计接收帧数，可用于确认接收路径是否在工作。高速总线上运行时，ESP32-S3 最多每 `100 ms` 向 MQTT 发布一帧，避免刷屏和流量放大，但计数仍按实际接收帧累加。Home Assistant 会自动发现 `sensor.industrial_controller_last_bus_frame`，属性中包含 `id`、`length`、`data` 和 `count`。
 
 ## Home Assistant 自动发现
 

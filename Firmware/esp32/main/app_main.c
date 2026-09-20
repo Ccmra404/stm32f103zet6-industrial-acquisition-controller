@@ -39,6 +39,7 @@
 #define BRIDGE_COMMAND_TIMEOUT_MS 500U
 #define BRIDGE_COMMAND_MAX_RETRIES 2U
 #define BRIDGE_CONSOLE_LINE_SIZE 96U
+#define BUS_RX_PUBLISH_INTERVAL_MS 100U
 
 #define NETWORK_NVS_NAMESPACE "netcfg"
 #define NETWORK_NVS_SSID "ssid"
@@ -100,6 +101,7 @@ static bool s_last_bus_rx_valid;
 static uint32_t s_rs232_rx_frames;
 static uint32_t s_can_rx_frames;
 static uint32_t s_bus_rx_bytes;
+static uint32_t s_last_bus_publish_ms;
 static QueueHandle_t s_command_queue;
 static QueueHandle_t s_ack_queue;
 static uint16_t s_command_sequence;
@@ -703,7 +705,7 @@ static void NetworkPublishCommandResult(uint16_t request_id,
     return;
   }
 
-  ack_sequence = ++s_ack_sequence;
+  ack_sequence = __atomic_add_fetch(&s_ack_sequence, 1U, __ATOMIC_RELAXED);
 
   if (reason != NULL)
   {
@@ -1017,7 +1019,17 @@ static void HandleFrame(const BridgeProtocolFrame *frame)
                  BusRxName(bus_rx.bus),
                  (unsigned long)bus_rx.identifier,
                  (unsigned)bus_rx.length);
-        NetworkPublishBusFrame(&bus_rx, bus_frame_count);
+
+        {
+          uint32_t now_ms = (uint32_t)(esp_timer_get_time() / 1000LL);
+
+          if ((uint32_t)(now_ms - s_last_bus_publish_ms) >=
+              BUS_RX_PUBLISH_INTERVAL_MS)
+          {
+            s_last_bus_publish_ms = now_ms;
+            NetworkPublishBusFrame(&bus_rx, bus_frame_count);
+          }
+        }
       }
       break;
     }
