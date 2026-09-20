@@ -136,6 +136,7 @@ industrial/telemetry
   "relay": 1,
   "supply_mv": [24000, 5000],
   "fault": 0,
+  "dac": [2048, 4095],
   "alive": 63,
   "wdg": 120,
   "link_state": "ONLINE",
@@ -155,6 +156,7 @@ industrial/telemetry
 | `relay` | 继电器输出位图 |
 | `supply_mv` | 24V、5V，单位 mV |
 | `fault` | 故障位图 |
+| `dac` | DAC1、DAC2 回读原始值，范围 0 - 4095 |
 | `alive` | FreeRTOS 任务存活位图 |
 | `wdg` | IWDG 刷新次数 |
 | `link_state` | STM32 链路状态：`BOOT`、`ONLINE`、`DEGRADED` 或 `OFFLINE` |
@@ -261,6 +263,20 @@ industrial/availability
 ESP32-S3 连接成功后发布 `online`，断开连接时由 MQTT Last Will 发布
 `offline`。Home Assistant 自动创建设备、遥测传感器、故障二进制传感器、命令按钮
 和继电器掩码控制实体。
+
+控制类实体的覆盖范围：
+
+| 实体 | 数量 | 说明 |
+| --- | ---: | --- |
+| `button.industrial_controller_pulse_relay_*` | 8 | 每路一个 1 秒脉冲按钮 |
+| `button.industrial_controller_all_relays_*` | 2 | 全部吸合 / 全部断开 |
+| `button.industrial_controller_clear_faults` | 1 | 清除锁存故障 |
+| `button.industrial_controller_save_config`、`..._load_config` | 2 | 配置保存与恢复 |
+| `number.industrial_controller_relay_mask` | 1 | 继电器掩码，逐位控制 |
+| `number.industrial_controller_dac_1`、`..._dac_2` | 2 | 模拟输出 0 - 4095，状态来自遥测回读 |
+
+脉冲按钮的 MQTT 载荷不带 `id`，由 ESP32-S3 分配新的请求编号。固定编号会命中
+STM32 的重复请求缓存，导致第二次脉冲被缓存应答而不会真正动作。
 
 可用的 Mushroom 控制面板、Mosquitto 和 Docker Compose 配置位于：
 

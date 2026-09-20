@@ -57,6 +57,7 @@ Download
 - CAN 初始化、RS485 方向控制，以及 RS232（UART4 中断）和 CAN（FIFO0 中断）接收队列
 - Modbus RTU 从站 `0x03`、`0x06`、`0x10`，以及主站请求编解码库
 - HELLO、HEARTBEAT、TELEMETRY、EVENT、DIAGNOSTICS、BUS_RX、COMMAND 和 COMMAND_ACK
+- 遥测包含 DAC1、DAC2 回读值，上位机可以确认模拟输出是否真的生效
 - 任务活性监督、IWDG、栈余量和队列丢包诊断
 - 最近 16 条命令结果缓存和重复请求去重
 

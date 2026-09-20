@@ -167,6 +167,7 @@
         <div class="value"><span>WATCHDOG</span><strong id="wdg">--</strong></div>
         <div class="value"><span>RS232</span><strong id="rs232">--</strong></div>
         <div class="value"><span>CAN</span><strong id="can">--</strong></div>
+        <div class="value"><span>DAC</span><strong id="dac">--</strong></div>
       </div>
       <div id="busFrame" class="sub">最近现场总线帧：--</div>
     </section>
@@ -322,6 +323,7 @@ async function refresh() {
     $("wdg").textContent = status.watchdog_refresh_count;
     $("rs232").textContent = `${status.rs232_rx_frames ?? 0} 帧`;
     $("can").textContent = `${status.can_rx_frames ?? 0} 帧`;
+    $("dac").textContent = (status.dac_raw ?? [0, 0]).join(" / ");
     $("busFrame").textContent = status.last_bus
       ? `最近现场总线帧：${status.last_bus.toUpperCase()} id=${status.last_bus_id} len=${status.last_bus_length} ${status.last_bus_data}`
       : "最近现场总线帧：--";

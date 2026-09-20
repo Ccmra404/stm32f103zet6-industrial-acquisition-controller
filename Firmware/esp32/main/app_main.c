@@ -425,6 +425,7 @@ static void NetworkPublishHomeAssistantDiscovery(void)
   char object_id[64];
   char name[48];
   char value_template[96];
+  char command_template[192];
   const char relay_command_template[] =
       "{\"id\":{{ (now().timestamp() * 1000) | int % 65535 }},"
       "\"command\":\"relay\",\"mask\":{{ value }}}";
@@ -662,11 +663,24 @@ static void NetworkPublishHomeAssistantDiscovery(void)
                                 "全部吸合",
                                 "mdi:power",
                                 "{\"id\":1002,\"command\":\"relay\",\"mask\":255}");
-  NetworkPublishDiscoveryButton("industrial_controller_pulse_relay_1",
-                                "通道1脉冲",
-                                "mdi:timer",
-                                "{\"id\":1003,\"command\":\"pulse\",\"channel\":0,"
-                                "\"duration_ms\":1000}");
+  /*
+   * Pulse commands intentionally carry no id so the ESP32 assigns a fresh
+   * request id every press. A fixed id would hit the STM32 duplicate-request
+   * cache and the second pulse would be answered from cache without firing.
+   */
+  for (uint8_t channel = 0U; channel < 8U; channel++)
+  {
+    (void)snprintf(object_id,
+                   sizeof(object_id),
+                   "industrial_controller_pulse_relay_%u",
+                   (unsigned)(channel + 1U));
+    (void)snprintf(name, sizeof(name), "通道%u脉冲", (unsigned)(channel + 1U));
+    (void)snprintf(command_template,
+                   sizeof(command_template),
+                   "{\"command\":\"pulse\",\"channel\":%u,\"duration_ms\":1000}",
+                   (unsigned)channel);
+    NetworkPublishDiscoveryButton(object_id, name, "mdi:timer", command_template);
+  }
   NetworkPublishDiscoveryButton("industrial_controller_clear_faults",
                                 "清除故障",
                                 "mdi:eraser",
@@ -687,6 +701,32 @@ static void NetworkPublishHomeAssistantDiscovery(void)
                                 1.0,
                                 relay_command_template,
                                 "{{ value_json.relay }}");
+
+  for (uint8_t channel = 0U; channel < 2U; channel++)
+  {
+    (void)snprintf(object_id,
+                   sizeof(object_id),
+                   "industrial_controller_dac_%u",
+                   (unsigned)(channel + 1U));
+    (void)snprintf(name, sizeof(name), "模拟输出%u", (unsigned)(channel + 1U));
+    (void)snprintf(value_template,
+                   sizeof(value_template),
+                   "{{ value_json.dac[%u] }}",
+                   (unsigned)channel);
+    (void)snprintf(command_template,
+                   sizeof(command_template),
+                   "{\"id\":{{ (now().timestamp() * 1000) | int %% 65535 }},"
+                   "\"command\":\"dac\",\"channel\":%u,\"value\":{{ value }}}",
+                   (unsigned)channel);
+    NetworkPublishDiscoveryNumber(object_id,
+                                  name,
+                                  "mdi:sine-wave",
+                                  0.0,
+                                  4095.0,
+                                  1.0,
+                                  command_template,
+                                  value_template);
+  }
 }
 
 static void NetworkPublishCommandResult(uint16_t request_id,
@@ -2044,13 +2084,16 @@ static void NetworkPublishTelemetry(void)
     position += snprintf(&payload[position],
                          sizeof(payload) - (size_t)position,
                          ",\"rtd_mc\":%ld,\"di\":%u,\"relay\":%u,"
-                         "\"supply24_mv\":%u,\"supply5_mv\":%u,\"fault\":%u",
+                         "\"supply24_mv\":%u,\"supply5_mv\":%u,\"fault\":%u,"
+                         "\"dac0\":%u,\"dac1\":%u",
                          (long)telemetry.rtd_millicelsius,
                          telemetry.di_bits,
                          telemetry.relay_bits,
                          telemetry.supply_mv[0],
                          telemetry.supply_mv[1],
-                         telemetry.fault_bits);
+                         telemetry.fault_bits,
+                         telemetry.analog_output_raw[0],
+                         telemetry.analog_output_raw[1]);
     if (diagnostics_valid)
     {
       position += snprintf(&payload[position],
@@ -2093,13 +2136,16 @@ static void NetworkPublishTelemetry(void)
     position += snprintf(&payload[position],
                          sizeof(payload) - (size_t)position,
                          "],\"rtd_mc\":%ld,\"di\":%u,\"relay\":%u,"
-                         "\"supply_mv\":[%u,%u],\"fault\":%u",
+                         "\"supply_mv\":[%u,%u],\"fault\":%u,"
+                         "\"dac\":[%u,%u]",
                          (long)telemetry.rtd_millicelsius,
                          telemetry.di_bits,
                          telemetry.relay_bits,
                          telemetry.supply_mv[0],
                          telemetry.supply_mv[1],
-                         telemetry.fault_bits);
+                         telemetry.fault_bits,
+                         telemetry.analog_output_raw[0],
+                         telemetry.analog_output_raw[1]);
     if (diagnostics_valid)
     {
       position += snprintf(&payload[position],
@@ -2281,13 +2327,15 @@ static void WebBuildStatusJson(char *output, size_t output_size)
   WebAppend(output, output_size, &position,
             "],\"rtd_millicelsius\":%ld,\"di_bits\":%u,"
             "\"relay_bits\":%u,\"supply_mv\":[%u,%u],"
-            "\"fault_bits\":%u",
+            "\"fault_bits\":%u,\"dac_raw\":[%u,%u]",
             (long)telemetry.rtd_millicelsius,
             telemetry.di_bits,
             telemetry.relay_bits,
             telemetry.supply_mv[0],
             telemetry.supply_mv[1],
-            telemetry.fault_bits);
+            telemetry.fault_bits,
+            telemetry.analog_output_raw[0],
+            telemetry.analog_output_raw[1]);
   if (diagnostics_valid)
   {
     WebAppend(output, output_size, &position,

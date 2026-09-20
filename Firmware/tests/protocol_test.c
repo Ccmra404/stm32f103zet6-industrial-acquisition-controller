@@ -88,6 +88,7 @@ static bool TestTelemetryRoundTrip(void)
       9,
   };
   const uint16_t supplies[2] = {24000U, 5000U};
+  const uint16_t analog_outputs[2] = {2048U, 4095U};
   uint8_t frame_data[BRIDGE_PROTOCOL_MAX_FRAME_SIZE];
   BridgeProtocolFrame frame;
   BridgeProtocolTelemetry telemetry;
@@ -99,10 +100,11 @@ static bool TestTelemetryRoundTrip(void)
                                                   0x5AU,
                                                   supplies,
                                                   0x0004U,
+                                                  analog_outputs,
                                                   frame_data,
                                                   sizeof(frame_data));
 
-  CHECK(length == 58U);
+  CHECK(length == 62U);
   CHECK(ParseBytes(frame_data, length, &frame));
   CHECK(BridgeProtocol_ParseTelemetry(&frame, &telemetry));
   CHECK(telemetry.timestamp_ms == 123456U);
@@ -112,6 +114,8 @@ static bool TestTelemetryRoundTrip(void)
   CHECK(telemetry.supply_mv[0] == 24000U);
   CHECK(telemetry.supply_mv[1] == 5000U);
   CHECK(telemetry.fault_bits == 0x0004U);
+  CHECK(telemetry.analog_output_raw[0] == 2048U);
+  CHECK(telemetry.analog_output_raw[1] == 4095U);
   for (uint8_t index = 0U; index < 8U; index++)
   {
     CHECK(telemetry.ai_raw[index] == inputs[index]);

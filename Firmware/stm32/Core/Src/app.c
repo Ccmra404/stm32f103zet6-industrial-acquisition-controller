@@ -628,6 +628,7 @@ static void BridgeTask(void *argument)
                                              state.relay_bits,
                                              supply_mv,
                                              state.fault_bits,
+                                             state.analog_output_raw,
                                              output,
                                              sizeof(output));
       last_telemetry_tick = now;

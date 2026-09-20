@@ -24,15 +24,33 @@ const ENTITY = {
   load: "button.industrial_controller_load_config",
   lastAck: "sensor.industrial_controller_last_ack",
   busFrame: "sensor.industrial_controller_last_bus_frame",
+  dac1: "sensor.industrial_controller_dac_1",
+  dac2: "sensor.industrial_controller_dac_2",
 };
 
 const COMMAND_ID = {
   relay: 0x0001,
   pulse: 0x0002,
+  dac: 0x0003,
   clear: 0x0004,
   save: 0x0200,
   load: 0x0201,
 };
+
+const COMMAND_TOPIC = "industrial/command";
+
+const FAULT_BITS = [
+  [0, "24V 电源"],
+  [1, "5V 电源"],
+  [2, "RTD 采集"],
+  [3, "ADS1256 采集"],
+  [4, "配置存储"],
+  [5, "现场通信"],
+  [6, "运行时监督"],
+];
+
+const COMMAND_LOG_KEY = "industrialCommandLog";
+const COMMAND_LOG_LIMIT = 20;
 
 const RESULT_TEXT = {
   0: "成功",
@@ -63,6 +81,7 @@ const state = {
 };
 
 let demoRelayMask = 0b00101101;
+const demoDacValues = [2048, 1024];
 
 function refreshIcons() {
   if (window.lucide) window.lucide.createIcons();
@@ -149,13 +168,57 @@ function isStale(entityId, limitMs = STALE_AFTER_MS) {
 }
 
 function formatClock(timestamp) {
-  return timestamp ? timestamp.toLocaleTimeString("zh-CN", { hour12: false }) : "--";
+  if (!timestamp || Number.isNaN(timestamp.getTime?.())) return "--";
+  return timestamp.toLocaleTimeString("zh-CN", { hour12: false });
 }
 
 function formatBitField(value, width) {
   const number = Number(value);
   if (!Number.isFinite(number)) return "--";
   return `${hex(number, width)} · ${number}`;
+}
+
+function escapeHtml(value) {
+  return String(value ?? "").replace(/[&<>"']/g, (character) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;",
+  })[character]);
+}
+
+function loadCommandLog() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(COMMAND_LOG_KEY) || "[]");
+    return Array.isArray(parsed) ? parsed.slice(0, COMMAND_LOG_LIMIT) : [];
+  } catch {
+    return [];
+  }
+}
+
+function appendCommandLog(label, result, detail = "") {
+  const entry = { at: new Date().toISOString(), label, result, detail };
+  const entries = [entry, ...loadCommandLog()].slice(0, COMMAND_LOG_LIMIT);
+  try {
+    localStorage.setItem(COMMAND_LOG_KEY, JSON.stringify(entries));
+  } catch {
+    // 私有模式或配额受限时只保留内存中的记录
+  }
+  renderCommandLog();
+}
+
+function renderCommandLog() {
+  const entries = loadCommandLog();
+  $("commandLog").innerHTML = entries.length
+    ? entries.map((entry) => `
+      <tr>
+        <td>${formatClock(new Date(entry.at))}</td>
+        <td>${escapeHtml(entry.label)}</td>
+        <td>${escapeHtml(entry.result)}</td>
+        <td>${escapeHtml(entry.detail) || "--"}</td>
+      </tr>`).join("")
+    : '<tr><td colspan="4" class="text-secondary">暂无记录</td></tr>';
 }
 
 function formatInteger(value) {
@@ -281,6 +344,8 @@ function renderTelemetryTable() {
     [ENTITY.wdg, "看门狗刷新", (value) => formatInteger(value)],
     [ENTITY.lastAck, "最近命令应答", (value) => value],
     [ENTITY.busFrame, "最近现场总线帧", (value) => value],
+    [ENTITY.dac1, "模拟输出 1", (value) => formatInteger(value)],
+    [ENTITY.dac2, "模拟输出 2", (value) => formatInteger(value)],
   ].map(([entity, label, format]) => {
     const raw = entityValue(entity);
     const unavailable = isUnavailable(entity);
@@ -298,6 +363,69 @@ function renderTelemetryTable() {
     </tr>`;
   });
   $("telemetryTable").innerHTML = rows.join("");
+}
+
+function renderFaultDetail() {
+  const element = $("faultDetail");
+  const value = Number(entityValue(ENTITY.fault, NaN));
+
+  if (!Number.isFinite(value)) {
+    element.className = "mt-3 small-muted";
+    element.textContent = "暂无数据";
+    return;
+  }
+
+  const active = FAULT_BITS.filter(([bit]) => ((value >> bit) & 1) === 1);
+  if (!active.length) {
+    element.className = "mt-3 small-muted";
+    element.textContent = "无故障";
+    return;
+  }
+
+  element.className = "mt-3";
+  element.innerHTML = active
+    .map(([, label]) => `<span class="fault-item">${escapeHtml(label)}</span>`)
+    .join("");
+}
+
+function renderFieldBus() {
+  const record = entityRecord(ENTITY.busFrame);
+  const attributes = record?.attributes ?? {};
+  const bus = attributes.bus ? String(attributes.bus).toUpperCase() : "";
+
+  if (isUnavailable(ENTITY.busFrame) || !bus) {
+    $("busBadge").className = "badge bg-secondary-lt";
+    $("busBadge").textContent = "无数据";
+    $("busType").textContent = "--";
+    $("busFrame").textContent = "--";
+    $("busCount").textContent = "--";
+    $("busData").textContent = "--";
+    return;
+  }
+
+  $("busBadge").className = `badge ${bus === "CAN" ? "bg-purple-lt" : "bg-blue-lt"}`;
+  $("busBadge").textContent = bus;
+  $("busType").textContent = bus;
+  $("busFrame").textContent = `${attributes.id ?? 0} / ${attributes.length ?? 0}`;
+  $("busCount").textContent = formatInteger(attributes.count ?? 0);
+  $("busData").textContent = attributes.data || "--";
+}
+
+function renderDacControls() {
+  [1, 2].forEach((channel) => {
+    const badge = $(`dac${channel}Readback`);
+    const input = $(`dac${channel}Input`);
+    const slider = $(`dac${channel}Slider`);
+    const value = Number(entityValue(ENTITY[`dac${channel}`], NaN));
+
+    badge.textContent = Number.isFinite(value) ? formatInteger(value) : "--";
+
+    const editing = document.activeElement === input || document.activeElement === slider;
+    if (Number.isFinite(value) && !editing) {
+      input.value = String(value);
+      slider.value = String(value);
+    }
+  });
 }
 
 function render() {
@@ -350,6 +478,9 @@ function render() {
   renderBits($("diBits"), entityValue(ENTITY.di), 8, isUnavailable(ENTITY.di));
   renderRelayBits(entityValue(ENTITY.relay));
   renderTelemetryTable();
+  renderFaultDetail();
+  renderFieldBus();
+  renderDacControls();
   appendChartPoint();
   refreshIcons();
 }
@@ -534,6 +665,134 @@ function setCommandPending(pending) {
   });
 }
 
+function nextRequestId() {
+  return ((Date.now() % 60000) + Math.floor(Math.random() * 1000) + 1) % 65536;
+}
+
+async function publishMqttCommand(payload) {
+  await haApi("/api/services/mqtt/publish", {
+    method: "POST",
+    body: JSON.stringify({
+      topic: COMMAND_TOPIC,
+      payload: JSON.stringify(payload),
+      qos: 1,
+      retain: false,
+    }),
+  });
+}
+
+async function confirmDacReadback(channel, expected) {
+  try {
+    await waitForNumberState(ENTITY[`dac${channel}`], expected, STATE_TIMEOUT_MS);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function sendPulseCommand() {
+  if (state.commandPending) return;
+
+  const channel = Number($("pulseChannel").value);
+  const duration = Number($("pulseDuration").value);
+  const result = $("commandResult");
+  const label = `脉冲 通道${channel + 1} ${duration} ms`;
+
+  if (!Number.isInteger(channel) || channel < 0 || channel > 7) {
+    result.className = "alert alert-danger mb-0";
+    result.textContent = "执行失败：脉冲通道必须在 1 - 8 之间";
+    return;
+  }
+  if (!Number.isInteger(duration) || duration < 100 || duration > 60000) {
+    result.className = "alert alert-danger mb-0";
+    result.textContent = "执行失败：脉冲时长必须在 100 - 60000 ms 之间";
+    return;
+  }
+
+  result.className = "alert alert-info mb-0";
+  result.textContent = `正在发送 ${label}...`;
+  setCommandPending(true);
+  try {
+    if (state.mode === "demo") {
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      result.className = "alert alert-success mb-0";
+      result.textContent = `演示模式：${label} 已在本地模拟。`;
+      appendCommandLog(label, "模拟成功", "演示数据");
+      return;
+    }
+
+    const marker = await currentAckMarker();
+    await publishMqttCommand({
+      id: nextRequestId(),
+      command: "pulse",
+      channel,
+      duration_ms: duration,
+    });
+    const ack = await waitForCommandAck(COMMAND_ID.pulse, marker);
+    result.className = "alert alert-success mb-0";
+    result.textContent = `${label} 已由 STM32 执行（应答 #${ack.id ?? "--"}）。`;
+    appendCommandLog(label, "成功", `应答 #${ack.id ?? "--"}`);
+  } catch (error) {
+    result.className = "alert alert-danger mb-0";
+    result.textContent = `执行失败：${error.message}`;
+    appendCommandLog(label, "失败", error.message);
+  } finally {
+    setCommandPending(false);
+  }
+}
+
+async function sendDacCommand(channel) {
+  if (state.commandPending) return;
+
+  const input = $(`dac${channel}Input`);
+  const slider = $(`dac${channel}Slider`);
+  const value = Number(input.value);
+  const result = $("commandResult");
+  const label = `DAC${channel} = ${value}`;
+
+  if (!Number.isInteger(value) || value < 0 || value > 4095) {
+    result.className = "alert alert-danger mb-0";
+    result.textContent = "执行失败：模拟输出必须在 0 - 4095 之间";
+    return;
+  }
+
+  result.className = "alert alert-info mb-0";
+  result.textContent = `正在设置 ${label}...`;
+  setCommandPending(true);
+  try {
+    slider.value = String(value);
+    if (state.mode === "demo") {
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      demoDacValues[channel - 1] = value;
+      state.latest[ENTITY[`dac${channel}`]] = value;
+      render();
+      result.className = "alert alert-success mb-0";
+      result.textContent = `演示模式：${label} 已在本地模拟。`;
+      appendCommandLog(label, "模拟成功", "演示数据");
+      return;
+    }
+
+    const marker = await currentAckMarker();
+    await publishMqttCommand({
+      id: nextRequestId(),
+      command: "dac",
+      channel: channel - 1,
+      value,
+    });
+    const ack = await waitForCommandAck(COMMAND_ID.dac, marker);
+    const readBack = await confirmDacReadback(channel, value);
+    result.className = "alert alert-success mb-0";
+    result.textContent = `${label} 已由 STM32 执行（应答 #${ack.id ?? "--"}${readBack ? "，回读一致" : "，回读未刷新"}）。`;
+    appendCommandLog(label, "成功", readBack ? "回读一致" : "回读未刷新");
+  } catch (error) {
+    result.className = "alert alert-danger mb-0";
+    result.textContent = `执行失败：${error.message}`;
+    appendCommandLog(label, "失败", error.message);
+  } finally {
+    setCommandPending(false);
+  }
+}
+
 async function sendCommand(button) {
   if (state.commandPending) return;
   const command = button.dataset.command;
@@ -546,6 +805,7 @@ async function sendCommand(button) {
       await new Promise((resolve) => setTimeout(resolve, 350));
       result.className = "alert alert-success mb-0";
       result.textContent = `演示模式下 ${command} 命令只在本地模拟，未下发到设备。`;
+      appendCommandLog(`命令 ${command}`, "模拟成功", "演示数据");
       return;
     }
     const marker = await currentAckMarker();
@@ -566,10 +826,12 @@ async function sendCommand(button) {
     }
     result.className = "alert alert-success mb-0";
     result.textContent = `命令 ${command} 已由 STM32 执行并确认（应答 #${ack.id ?? "--"}）。`;
+    appendCommandLog(`命令 ${command}`, "成功", `应答 #${ack.id ?? "--"}`);
     await fetchStates();
   } catch (error) {
     result.className = "alert alert-danger mb-0";
     result.textContent = `执行失败：${error.message}`;
+    appendCommandLog(`命令 ${command}`, "失败", error.message);
   } finally {
     setCommandPending(false);
   }
@@ -586,6 +848,7 @@ async function toggleRelay(index) {
     const demoResult = $("commandResult");
     demoResult.className = "alert alert-success mb-0";
     demoResult.textContent = `演示模式：继电器 ${index + 1} 已${((next >> index) & 1) === 1 ? "吸合" : "断开"}（本地模拟）。`;
+    appendCommandLog(`继电器 ${index + 1}`, "模拟成功", "演示数据");
     render();
     return;
   }
@@ -607,10 +870,12 @@ async function toggleRelay(index) {
     await waitForNumberState(ENTITY.relayMask, next);
     result.className = "alert alert-success mb-0";
     result.textContent = `继电器 ${index + 1} 已确认${((next >> index) & 1) === 1 ? "吸合" : "断开"}。`;
+    appendCommandLog(`继电器 ${index + 1}`, "成功", `掩码 ${hex(next, 2)}`);
     await fetchStates();
   } catch (error) {
     result.className = "alert alert-danger mb-0";
     result.textContent = `继电器 ${index + 1} 切换失败：${error.message}`;
+    appendCommandLog(`继电器 ${index + 1}`, "失败", error.message);
   } finally {
     setCommandPending(false);
   }
@@ -635,6 +900,15 @@ function demoSnapshot() {
   state.latest[ENTITY.wdg] = 1430 + t;
   state.latest[ENTITY.alive] = 0x001f;
   state.latest[ENTITY.gateway] = "on";
+  state.latest[ENTITY.dac1] = demoDacValues[0];
+  state.latest[ENTITY.dac2] = demoDacValues[1];
+  state.latest[ENTITY.busFrame] = {
+    state: t % 3 === 0 ? "RS232 x5" : "CAN x8",
+    last_updated: new Date().toISOString(),
+    attributes: t % 3 === 0
+      ? { bus: "rs232", id: 0, length: 5, data: "48 65 6C 6C 6F", count: 4 + t }
+      : { bus: "can", id: 0x123, length: 8, data: "10 20 30 40 50 60 70 80", count: 11 + t },
+  };
   render();
 }
 
@@ -695,9 +969,35 @@ $("relayBits").addEventListener("click", (event) => {
   toggleRelay(Number(button.dataset.relay));
 });
 
+$("pulseSend").addEventListener("click", sendPulseCommand);
+[1, 2].forEach((channel) => {
+  const slider = $(`dac${channel}Slider`);
+  const input = $(`dac${channel}Input`);
+
+  slider.addEventListener("input", () => {
+    input.value = slider.value;
+  });
+  input.addEventListener("input", () => {
+    const value = Number(input.value);
+    if (Number.isFinite(value)) {
+      slider.value = String(Math.min(4095, Math.max(0, value)));
+    }
+  });
+  $(`dac${channel}Apply`).addEventListener("click", () => sendDacCommand(channel));
+});
+$("clearLogButton").addEventListener("click", () => {
+  try {
+    localStorage.removeItem(COMMAND_LOG_KEY);
+  } catch {
+    // 忽略存储不可用
+  }
+  renderCommandLog();
+});
+
 createChart();
 refreshIcons();
 setVisible($("chartEmpty"), true);
+renderCommandLog();
 restoreSession();
 
 document.addEventListener("visibilitychange", () => {

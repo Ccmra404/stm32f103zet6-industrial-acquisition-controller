@@ -236,14 +236,15 @@ uint16_t BridgeProtocol_BuildTelemetry(uint16_t sequence,
                                        uint8_t relay_bits,
                                        const uint16_t supply_mv[2],
                                        uint16_t fault_bits,
+                                       const uint16_t analog_output_raw[2],
                                        uint8_t *output,
                                        uint16_t output_size)
 {
-  uint8_t payload[48];
+  uint8_t payload[52];
   uint16_t offset = 0U;
   uint8_t index;
 
-  if ((ai_raw == 0) || (supply_mv == 0))
+  if ((ai_raw == 0) || (supply_mv == 0) || (analog_output_raw == 0))
   {
     return 0U;
   }
@@ -264,6 +265,10 @@ uint16_t BridgeProtocol_BuildTelemetry(uint16_t sequence,
   WriteU16Le(&payload[offset], supply_mv[1]);
   offset += 2U;
   WriteU16Le(&payload[offset], fault_bits);
+  offset += 2U;
+  WriteU16Le(&payload[offset], analog_output_raw[0]);
+  offset += 2U;
+  WriteU16Le(&payload[offset], analog_output_raw[1]);
 
   return BuildFrame(BRIDGE_MSG_TELEMETRY, sequence, payload, sizeof(payload), output, output_size);
 }
@@ -438,7 +443,7 @@ bool BridgeProtocol_ParseTelemetry(const BridgeProtocolFrame *frame,
 
   if ((frame == 0) || (telemetry == 0) ||
       (frame->type != BRIDGE_MSG_TELEMETRY) ||
-      (frame->length != 48U))
+      (frame->length != 52U))
   {
     return false;
   }
@@ -459,6 +464,10 @@ bool BridgeProtocol_ParseTelemetry(const BridgeProtocolFrame *frame,
   telemetry->supply_mv[1] = ReadU16Le(&frame->payload[offset]);
   offset += 2U;
   telemetry->fault_bits = ReadU16Le(&frame->payload[offset]);
+  offset += 2U;
+  telemetry->analog_output_raw[0] = ReadU16Le(&frame->payload[offset]);
+  offset += 2U;
+  telemetry->analog_output_raw[1] = ReadU16Le(&frame->payload[offset]);
   return true;
 }
 

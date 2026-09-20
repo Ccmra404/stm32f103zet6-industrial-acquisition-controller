@@ -110,6 +110,7 @@ typedef struct
   uint8_t relay_bits;
   uint16_t supply_mv[2];
   uint16_t fault_bits;
+  uint16_t analog_output_raw[2];
 } BridgeProtocolTelemetry;
 
 typedef struct
@@ -179,6 +180,7 @@ uint16_t BridgeProtocol_BuildTelemetry(uint16_t sequence,
                                        uint8_t relay_bits,
                                        const uint16_t supply_mv[2],
                                        uint16_t fault_bits,
+                                       const uint16_t analog_output_raw[2],
                                        uint8_t *output,
                                        uint16_t output_size);
 
