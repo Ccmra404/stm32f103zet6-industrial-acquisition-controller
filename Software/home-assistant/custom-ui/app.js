@@ -51,6 +51,7 @@ const FAULT_BITS = [
 
 const COMMAND_LOG_KEY = "industrialCommandLog";
 const COMMAND_LOG_LIMIT = 20;
+const CONSOLE_BUILD = "UI 2026-09-20.4";
 
 const RESULT_TEXT = {
   0: "成功",
@@ -997,6 +998,7 @@ $("clearLogButton").addEventListener("click", () => {
 createChart();
 refreshIcons();
 setVisible($("chartEmpty"), true);
+$("consoleBuild").textContent = CONSOLE_BUILD;
 renderCommandLog();
 restoreSession();
 
