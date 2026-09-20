@@ -22,7 +22,32 @@ const ENTITY = {
   clear: "button.industrial_controller_clear_faults",
   save: "button.industrial_controller_save_config",
   load: "button.industrial_controller_load_config",
+  lastAck: "sensor.industrial_controller_last_ack",
+  busFrame: "sensor.industrial_controller_last_bus_frame",
 };
+
+const COMMAND_ID = {
+  relay: 0x0001,
+  pulse: 0x0002,
+  clear: 0x0004,
+  save: 0x0200,
+  load: 0x0201,
+};
+
+const RESULT_TEXT = {
+  0: "成功",
+  1: "指令不受支持",
+  2: "参数无效",
+  3: "设备忙",
+  4: "设备未就绪",
+  5: "超出范围",
+  6: "存储错误",
+  7: "安全锁生效",
+};
+
+const ACK_POLL_INTERVAL_MS = 250;
+const ACK_TIMEOUT_MS = 6000;
+const STATE_TIMEOUT_MS = 4000;
 
 const state = {
   mode: "login",
@@ -181,6 +206,8 @@ function renderTelemetryTable() {
     [ENTITY.relay, "继电器位图"],
     [ENTITY.fault, "故障位图"],
     [ENTITY.wdg, "看门狗刷新"],
+    [ENTITY.lastAck, "最近命令应答"],
+    [ENTITY.busFrame, "最近现场总线帧"],
   ].map(([entity, label]) => `
     <tr>
       <td><code>${label}</code></td>
@@ -313,6 +340,54 @@ async function pressButton(entityId) {
   });
 }
 
+async function currentAckMarker() {
+  try {
+    const entity = await haApi(`/api/states/${ENTITY.lastAck}`);
+    state.latest[ENTITY.lastAck] = entity;
+    return entity.attributes?.seq ?? null;
+  } catch {
+    return null;
+  }
+}
+
+async function waitForCommandAck(commandId, marker) {
+  const deadline = Date.now() + ACK_TIMEOUT_MS;
+
+  while (Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, ACK_POLL_INTERVAL_MS));
+    const entity = await haApi(`/api/states/${ENTITY.lastAck}`);
+    state.latest[ENTITY.lastAck] = entity;
+    const attributes = entity.attributes || {};
+
+    if (marker !== null && marker !== undefined && attributes.seq === marker) continue;
+    if (commandId !== undefined && Number(attributes.command) !== commandId) continue;
+
+    if (Number(attributes.result) !== 0) {
+      const reason = attributes.reason ? `（${attributes.reason}）` : "";
+      const text = RESULT_TEXT[Number(attributes.result)] ?? `结果码 ${attributes.result}`;
+      throw new Error(`STM32 应答异常：${text}${reason}`);
+    }
+    return attributes;
+  }
+
+  throw new Error("STM32 未在 6 秒内应答，请检查链路状态与看门狗诊断");
+}
+
+async function waitForNumberState(entityId, expected, timeoutMs = STATE_TIMEOUT_MS) {
+  const deadline = Date.now() + timeoutMs;
+  let last = null;
+
+  while (Date.now() < deadline) {
+    const entity = await haApi(`/api/states/${entityId}`);
+    state.latest[entityId] = entity;
+    last = Number(entity.state);
+    if (Number.isFinite(last) && last === expected) return true;
+    await new Promise((resolve) => setTimeout(resolve, ACK_POLL_INTERVAL_MS));
+  }
+
+  throw new Error(`设备状态未确认（当前 ${last ?? "--"}，期望 ${expected}）`);
+}
+
 async function sendCommand(button) {
   const command = button.dataset.command;
   const result = $("commandResult");
@@ -325,6 +400,7 @@ async function sendCommand(button) {
       result.textContent = `演示命令 ${command} 已执行。`;
       return;
     }
+    const marker = await currentAckMarker();
     if (command === "relay") {
       await pressButton(button.dataset.mask === "0" ? ENTITY.allOff : ENTITY.allOn);
     } else if (command === "pulse") {
@@ -336,8 +412,12 @@ async function sendCommand(button) {
     } else if (command === "load") {
       await pressButton(ENTITY.load);
     }
+    const ack = await waitForCommandAck(COMMAND_ID[command], marker);
+    if (command === "relay") {
+      await waitForNumberState(ENTITY.relayMask, Number(button.dataset.mask));
+    }
     result.className = "alert alert-success mb-0";
-    result.textContent = `命令 ${command} 已发送，Home Assistant 正在执行。`;
+    result.textContent = `命令 ${command} 已由 STM32 执行并确认（应答 #${ack.id ?? "--"}）。`;
     await fetchStates();
   } catch (error) {
     result.className = "alert alert-danger mb-0";
@@ -359,6 +439,7 @@ async function toggleRelay(index) {
   result.className = "alert alert-info mb-0";
   result.textContent = `正在切换继电器 ${index + 1}...`;
   try {
+    const marker = await currentAckMarker();
     await haApi("/api/services/number/set_value", {
       method: "POST",
       body: JSON.stringify({
@@ -366,8 +447,10 @@ async function toggleRelay(index) {
         value: next,
       }),
     });
+    await waitForCommandAck(COMMAND_ID.relay, marker);
+    await waitForNumberState(ENTITY.relayMask, next);
     result.className = "alert alert-success mb-0";
-    result.textContent = `继电器 ${index + 1} 已切换到${((next >> index) & 1) === 1 ? "吸合" : "断开"}。`;
+    result.textContent = `继电器 ${index + 1} 已确认${((next >> index) & 1) === 1 ? "吸合" : "断开"}。`;
     await fetchStates();
   } catch (error) {
     result.className = "alert alert-danger mb-0";

@@ -250,3 +250,188 @@ uint16_t ModbusRtu_Process(ModbusRtuServer *server,
                         MODBUS_RTU_EXCEPTION_ILLEGAL_FUNCTION,
                         response, response_size);
 }
+
+uint16_t ModbusRtu_BuildReadRequest(uint8_t slave_address,
+                                    uint8_t function,
+                                    uint16_t address,
+                                    uint16_t quantity,
+                                    uint8_t *request,
+                                    uint16_t request_size)
+{
+  if ((request == 0) || (request_size < 8U) || (quantity == 0U) ||
+      (quantity > 125U) ||
+      ((function != MODBUS_RTU_FUNCTION_READ_HOLDING) &&
+       (function != MODBUS_RTU_FUNCTION_READ_INPUT)))
+  {
+    return 0U;
+  }
+
+  request[0] = slave_address;
+  request[1] = function;
+  WriteU16Be(&request[2], address);
+  WriteU16Be(&request[4], quantity);
+  return AppendCrc(request, 6U);
+}
+
+uint16_t ModbusRtu_BuildWriteSingleRequest(uint8_t slave_address,
+                                           uint16_t address,
+                                           uint16_t value,
+                                           uint8_t *request,
+                                           uint16_t request_size)
+{
+  if ((request == 0) || (request_size < 8U))
+  {
+    return 0U;
+  }
+
+  request[0] = slave_address;
+  request[1] = MODBUS_RTU_FUNCTION_WRITE_SINGLE;
+  WriteU16Be(&request[2], address);
+  WriteU16Be(&request[4], value);
+  return AppendCrc(request, 6U);
+}
+
+uint16_t ModbusRtu_BuildWriteMultipleRequest(uint8_t slave_address,
+                                             uint16_t address,
+                                             const uint16_t *values,
+                                             uint16_t quantity,
+                                             uint8_t *request,
+                                             uint16_t request_size)
+{
+  uint16_t length;
+
+  if ((request == 0) || (values == 0) || (quantity == 0U) ||
+      (quantity > 123U))
+  {
+    return 0U;
+  }
+
+  length = (uint16_t)(9U + (quantity * 2U));
+  if (request_size < length)
+  {
+    return 0U;
+  }
+
+  request[0] = slave_address;
+  request[1] = MODBUS_RTU_FUNCTION_WRITE_MULTIPLE;
+  WriteU16Be(&request[2], address);
+  WriteU16Be(&request[4], quantity);
+  request[6] = (uint8_t)(quantity * 2U);
+  for (uint16_t index = 0U; index < quantity; index++)
+  {
+    WriteU16Be(&request[7U + (index * 2U)], values[index]);
+  }
+
+  return AppendCrc(request, (uint16_t)(7U + (quantity * 2U)));
+}
+
+static bool ParseCrc(const uint8_t *response, uint16_t response_length)
+{
+  uint16_t received_crc;
+  uint16_t calculated_crc;
+
+  if ((response == 0) || (response_length < 4U))
+  {
+    return false;
+  }
+
+  received_crc = (uint16_t)((uint16_t)response[response_length - 2U] |
+                            ((uint16_t)response[response_length - 1U] << 8U));
+  calculated_crc = ModbusRtu_Crc16(response, (uint16_t)(response_length - 2U));
+  return (received_crc == calculated_crc);
+}
+
+bool ModbusRtu_ParseResponse(uint8_t slave_address,
+                             const uint8_t *response,
+                             uint16_t response_length,
+                             ModbusRtuResponse *parsed)
+{
+  uint8_t function;
+  uint16_t index;
+
+  if ((response == 0) || (parsed == 0) || (response_length < 5U))
+  {
+    return false;
+  }
+
+  memset(parsed, 0, sizeof(*parsed));
+
+  if (response[0] != slave_address)
+  {
+    return false;
+  }
+
+  if (!ParseCrc(response, response_length))
+  {
+    return false;
+  }
+
+  function = response[1];
+  parsed->slave_address = response[0];
+  parsed->function = (uint8_t)(function & 0x7FU);
+
+  if ((function & 0x80U) != 0U)
+  {
+    if (response_length != 5U)
+    {
+      return false;
+    }
+
+    parsed->exception_code = response[2];
+    return (parsed->exception_code != 0U);
+  }
+
+  if ((function == MODBUS_RTU_FUNCTION_READ_HOLDING) ||
+      (function == MODBUS_RTU_FUNCTION_READ_INPUT))
+  {
+    uint8_t byte_count = response[2];
+    uint16_t register_count = (uint16_t)(byte_count / 2U);
+
+    if ((byte_count == 0U) || ((byte_count % 2U) != 0U) ||
+        (register_count > MODBUS_RTU_MAX_REGISTERS) ||
+        (response_length != (uint16_t)(byte_count + 5U)))
+    {
+      return false;
+    }
+
+    for (index = 0U; index < register_count; index++)
+    {
+      parsed->registers[index] = ReadU16Be(&response[3U + (index * 2U)]);
+    }
+    parsed->register_count = register_count;
+    parsed->quantity = register_count;
+    return true;
+  }
+
+  if (function == MODBUS_RTU_FUNCTION_WRITE_SINGLE)
+  {
+    if (response_length != 8U)
+    {
+      return false;
+    }
+
+    parsed->address = ReadU16Be(&response[2]);
+    parsed->registers[0] = ReadU16Be(&response[4]);
+    parsed->register_count = 1U;
+    parsed->quantity = 1U;
+    return true;
+  }
+
+  if (function == MODBUS_RTU_FUNCTION_WRITE_MULTIPLE)
+  {
+    if (response_length != 8U)
+    {
+      return false;
+    }
+
+    parsed->address = ReadU16Be(&response[2]);
+    parsed->quantity = ReadU16Be(&response[4]);
+    if ((parsed->quantity == 0U) || (parsed->quantity > 123U))
+    {
+      return false;
+    }
+    return true;
+  }
+
+  return false;
+}

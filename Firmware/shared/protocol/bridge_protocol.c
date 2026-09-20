@@ -306,6 +306,44 @@ uint16_t BridgeProtocol_BuildDiagnostics(uint16_t sequence,
   return BuildFrame(BRIDGE_MSG_DIAGNOSTICS, sequence, payload, sizeof(payload), output, output_size);
 }
 
+uint16_t BridgeProtocol_BuildBusRx(uint16_t sequence,
+                                   uint8_t bus,
+                                   uint32_t identifier,
+                                   const uint8_t *data,
+                                   uint8_t length,
+                                   uint8_t *output,
+                                   uint16_t output_size)
+{
+  uint8_t payload[6U + BRIDGE_BUS_RX_MAX_DATA];
+
+  if ((data == 0) || (length == 0U) || (length > BRIDGE_BUS_RX_MAX_DATA))
+  {
+    return 0U;
+  }
+
+  if ((bus != BRIDGE_BUS_RS232) && (bus != BRIDGE_BUS_CAN))
+  {
+    return 0U;
+  }
+
+  if ((bus == BRIDGE_BUS_CAN) && (length > 8U))
+  {
+    return 0U;
+  }
+
+  payload[0] = bus;
+  WriteU32Le(&payload[1], identifier);
+  payload[5] = length;
+  memcpy(&payload[6], data, length);
+
+  return BuildFrame(BRIDGE_MSG_BUS_RX,
+                    sequence,
+                    payload,
+                    (uint16_t)(6U + length),
+                    output,
+                    output_size);
+}
+
 uint16_t BridgeProtocol_BuildCommandAck(uint16_t sequence,
                                         uint16_t request_id,
                                         uint16_t command_id,
@@ -447,6 +485,42 @@ bool BridgeProtocol_ParseDiagnostics(const BridgeProtocolFrame *frame,
     diagnostics->task_stack_free[index] = ReadU16Le(&frame->payload[offset]);
     offset += 2U;
   }
+  return true;
+}
+
+bool BridgeProtocol_ParseBusRx(const BridgeProtocolFrame *frame,
+                               BridgeProtocolBusRx *bus_rx)
+{
+  uint8_t length;
+
+  if ((frame == 0) || (bus_rx == 0) || (frame->type != BRIDGE_MSG_BUS_RX) ||
+      (frame->length < 7U) || (frame->length > (6U + BRIDGE_BUS_RX_MAX_DATA)))
+  {
+    return false;
+  }
+
+  bus_rx->bus = frame->payload[0];
+  bus_rx->identifier = ReadU32Le(&frame->payload[1]);
+  length = frame->payload[5];
+  bus_rx->length = length;
+
+  if ((length == 0U) || (length > BRIDGE_BUS_RX_MAX_DATA) ||
+      (frame->length != (uint16_t)(6U + length)))
+  {
+    return false;
+  }
+
+  if ((bus_rx->bus != BRIDGE_BUS_RS232) && (bus_rx->bus != BRIDGE_BUS_CAN))
+  {
+    return false;
+  }
+
+  if ((bus_rx->bus == BRIDGE_BUS_CAN) && (length > 8U))
+  {
+    return false;
+  }
+
+  memcpy(bus_rx->data, &frame->payload[6], length);
   return true;
 }
 

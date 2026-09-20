@@ -232,6 +232,97 @@ static bool TestUnsupportedVersionIsRejected(void)
   return true;
 }
 
+static bool TestBusRxRoundTrip(void)
+{
+  const uint8_t rs232_payload[5] = {'H', 'e', 'l', 'l', 'o'};
+  const uint8_t can_payload[8] = {0x01U, 0x02U, 0x03U, 0x04U, 0x05U, 0x06U, 0x07U, 0x08U};
+  uint8_t frame_data[BRIDGE_PROTOCOL_MAX_FRAME_SIZE];
+  BridgeProtocolFrame frame;
+  BridgeProtocolBusRx bus_rx;
+  uint16_t length;
+
+  length = BridgeProtocol_BuildBusRx(0x0010U,
+                                     BRIDGE_BUS_RS232,
+                                     0UL,
+                                     rs232_payload,
+                                     sizeof(rs232_payload),
+                                     frame_data,
+                                     sizeof(frame_data));
+  CHECK(length == 21U);
+  CHECK(ParseBytes(frame_data, length, &frame));
+  CHECK(BridgeProtocol_ParseBusRx(&frame, &bus_rx));
+  CHECK(bus_rx.bus == BRIDGE_BUS_RS232);
+  CHECK(bus_rx.identifier == 0U);
+  CHECK(bus_rx.length == sizeof(rs232_payload));
+  CHECK(memcmp(bus_rx.data, rs232_payload, sizeof(rs232_payload)) == 0);
+
+  length = BridgeProtocol_BuildBusRx(0x0011U,
+                                     BRIDGE_BUS_CAN,
+                                     0x123U,
+                                     can_payload,
+                                     sizeof(can_payload),
+                                     frame_data,
+                                     sizeof(frame_data));
+  CHECK(length == 24U);
+  CHECK(ParseBytes(frame_data, length, &frame));
+  CHECK(BridgeProtocol_ParseBusRx(&frame, &bus_rx));
+  CHECK(bus_rx.bus == BRIDGE_BUS_CAN);
+  CHECK(bus_rx.identifier == 0x123U);
+  CHECK(bus_rx.length == sizeof(can_payload));
+  CHECK(memcmp(bus_rx.data, can_payload, sizeof(can_payload)) == 0);
+
+  length = BridgeProtocol_BuildBusRx(0x0012U,
+                                     BRIDGE_BUS_CAN,
+                                     0x18FEF100UL,
+                                     can_payload,
+                                     2U,
+                                     frame_data,
+                                     sizeof(frame_data));
+  CHECK(length > 0U);
+  CHECK(ParseBytes(frame_data, length, &frame));
+  CHECK(BridgeProtocol_ParseBusRx(&frame, &bus_rx));
+  CHECK(bus_rx.identifier == 0x18FEF100UL);
+  CHECK(bus_rx.length == 2U);
+  return true;
+}
+
+static bool TestBusRxRejectsInvalidInput(void)
+{
+  const uint8_t payload[BRIDGE_BUS_RX_MAX_DATA] = {0U};
+  uint8_t frame_data[BRIDGE_PROTOCOL_MAX_FRAME_SIZE];
+  BridgeProtocolFrame frame;
+  BridgeProtocolBusRx bus_rx;
+  uint16_t length;
+
+  CHECK(BridgeProtocol_BuildBusRx(1U, BRIDGE_BUS_RS232, 0U, payload, 0U,
+                                  frame_data, sizeof(frame_data)) == 0U);
+  CHECK(BridgeProtocol_BuildBusRx(1U, 0x7FU, 0U, payload, 1U,
+                                  frame_data, sizeof(frame_data)) == 0U);
+  CHECK(BridgeProtocol_BuildBusRx(1U, BRIDGE_BUS_CAN, 0U, payload, 9U,
+                                  frame_data, sizeof(frame_data)) == 0U);
+  CHECK(BridgeProtocol_BuildBusRx(1U, BRIDGE_BUS_RS232, 0U, NULL, 1U,
+                                  frame_data, sizeof(frame_data)) == 0U);
+
+  length = BridgeProtocol_BuildBusRx(1U, BRIDGE_BUS_RS232, 0U, payload,
+                                     BRIDGE_BUS_RX_MAX_DATA, frame_data,
+                                     sizeof(frame_data));
+  CHECK(length > 0U);
+  CHECK(ParseBytes(frame_data, length, &frame));
+  CHECK(BridgeProtocol_ParseBusRx(&frame, &bus_rx));
+
+  frame.type = BRIDGE_MSG_TELEMETRY;
+  CHECK(!BridgeProtocol_ParseBusRx(&frame, &bus_rx));
+  frame.type = BRIDGE_MSG_BUS_RX;
+  frame.payload[5] = BRIDGE_BUS_RX_MAX_DATA + 1U;
+  CHECK(!BridgeProtocol_ParseBusRx(&frame, &bus_rx));
+  frame.payload[5] = 1U;
+  frame.payload[0] = 0x7FU;
+  CHECK(!BridgeProtocol_ParseBusRx(&frame, &bus_rx));
+  CHECK(!BridgeProtocol_ParseBusRx(&frame, NULL));
+  CHECK(!BridgeProtocol_ParseBusRx(NULL, &bus_rx));
+  return true;
+}
+
 static bool TestShortOutputIsRejected(void)
 {
   uint8_t frame_data[8];
@@ -257,6 +348,8 @@ int main(void)
       {"telemetry round trip", TestTelemetryRoundTrip},
       {"diagnostics round trip", TestDiagnosticsRoundTrip},
       {"command and ack round trip", TestCommandAndAckRoundTrip},
+      {"bus rx round trip", TestBusRxRoundTrip},
+      {"bus rx rejects invalid input", TestBusRxRejectsInvalidInput},
       {"parser resynchronizes", TestParserResynchronizesAfterGarbage},
       {"corrupt crc rejected", TestCorruptCrcIsRejected},
       {"unsupported version rejected", TestUnsupportedVersionIsRejected},

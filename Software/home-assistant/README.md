@@ -62,6 +62,9 @@ C:\Users\zalry\.codex\.sandbox-secrets\home-assistant-owner.json
 
 自写控制台和 Mushroom 原生 Dashboard 都使用同一批 Home Assistant 实体。
 自写控制台的继电器位图支持逐路点击，可单独切换 0 到 7 路输出。
+控制台下发命令后会等待 `industrial/ack` 上新出现的 `seq`，只有 STM32 返回
+`result = 0` 才提示成功，随后回读继电器掩码确认输出状态；超时或异常码会直接
+显示原因，不会把 Home Assistant 接受请求当成设备已执行。
 
 ## Connect the ESP32
 
@@ -90,7 +93,8 @@ After the ESP32 reconnects, Home Assistant should show a new device named
 industrial/telemetry       telemetry JSON
 industrial/event           link-state event JSON
 industrial/command         command JSON
-industrial/ack             command result JSON
+industrial/ack             command result JSON (含递增 seq)
+industrial/bus             RS232 / CAN 接收帧 JSON
 industrial/availability    online / offline
 homeassistant/...          retained discovery documents
 ```

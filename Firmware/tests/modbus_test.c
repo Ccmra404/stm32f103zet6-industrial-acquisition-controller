@@ -280,6 +280,208 @@ static bool TestWrongSlaveIsIgnored(void)
   return true;
 }
 
+static bool TestMasterBuildReadRequest(void)
+{
+  uint8_t request[16];
+  uint16_t request_length;
+
+  request_length = ModbusRtu_BuildReadRequest(1U,
+                                              MODBUS_RTU_FUNCTION_READ_HOLDING,
+                                              0U,
+                                              2U,
+                                              request,
+                                              sizeof(request));
+
+  CHECK(request_length == 8U);
+  CHECK(request[0] == 1U);
+  CHECK(request[1] == 0x03U);
+  CHECK(request[2] == 0U);
+  CHECK(request[3] == 0U);
+  CHECK(request[4] == 0U);
+  CHECK(request[5] == 2U);
+  CHECK(request[6] == 0xC5U);
+  CHECK(request[7] == 0xCDU);
+
+  CHECK(ModbusRtu_BuildReadRequest(1U, 0x05U, 0U, 1U, request, sizeof(request)) == 0U);
+  CHECK(ModbusRtu_BuildReadRequest(1U,
+                                   MODBUS_RTU_FUNCTION_READ_HOLDING,
+                                   0U,
+                                   0U,
+                                   request,
+                                   sizeof(request)) == 0U);
+  CHECK(ModbusRtu_BuildReadRequest(1U,
+                                   MODBUS_RTU_FUNCTION_READ_HOLDING,
+                                   0U,
+                                   126U,
+                                   request,
+                                   sizeof(request)) == 0U);
+  CHECK(ModbusRtu_BuildReadRequest(1U,
+                                   MODBUS_RTU_FUNCTION_READ_HOLDING,
+                                   0U,
+                                   1U,
+                                   request,
+                                   7U) == 0U);
+  return true;
+}
+
+static bool TestMasterReadRoundTrip(void)
+{
+  ModbusRtuServer server;
+  ModbusRtuResponse parsed;
+  uint8_t request[16];
+  uint8_t response[32];
+  uint16_t request_length;
+  uint16_t response_length;
+
+  ModbusRtu_Init(&server, 7U, 0U);
+  server.registers[3] = 0x1234U;
+  server.registers[4] = 0xABCDU;
+
+  request_length = ModbusRtu_BuildReadRequest(7U,
+                                              MODBUS_RTU_FUNCTION_READ_HOLDING,
+                                              3U,
+                                              2U,
+                                              request,
+                                              sizeof(request));
+  response_length = ModbusRtu_Process(&server,
+                                      request,
+                                      request_length,
+                                      response,
+                                      sizeof(response));
+
+  CHECK(response_length == 9U);
+  CHECK(ModbusRtu_ParseResponse(7U, response, response_length, &parsed) == true);
+  CHECK(parsed.exception_code == 0U);
+  CHECK(parsed.function == MODBUS_RTU_FUNCTION_READ_HOLDING);
+  CHECK(parsed.register_count == 2U);
+  CHECK(parsed.quantity == 2U);
+  CHECK(parsed.registers[0] == 0x1234U);
+  CHECK(parsed.registers[1] == 0xABCDU);
+  return true;
+}
+
+static bool TestMasterWriteSingleRoundTrip(void)
+{
+  ModbusRtuServer server;
+  ModbusRtuResponse parsed;
+  uint8_t request[16];
+  uint8_t response[16];
+  uint16_t request_length;
+  uint16_t response_length;
+
+  ModbusRtu_Init(&server, 1U, UINT64_C(1) << 0x20U);
+  request_length = ModbusRtu_BuildWriteSingleRequest(1U,
+                                                     0x20U,
+                                                     0x00A5U,
+                                                     request,
+                                                     sizeof(request));
+  response_length = ModbusRtu_Process(&server,
+                                      request,
+                                      request_length,
+                                      response,
+                                      sizeof(response));
+
+  CHECK(response_length == 8U);
+  CHECK(server.registers[0x20U] == 0x00A5U);
+  CHECK(server.write_count == 1U);
+  CHECK(server.writes[0].address == 0x20U);
+  CHECK(server.writes[0].value == 0x00A5U);
+  CHECK(ModbusRtu_ParseResponse(1U, response, response_length, &parsed) == true);
+  CHECK(parsed.address == 0x20U);
+  CHECK(parsed.registers[0] == 0x00A5U);
+  CHECK(parsed.quantity == 1U);
+  return true;
+}
+
+static bool TestMasterWriteMultipleRoundTrip(void)
+{
+  ModbusRtuServer server;
+  ModbusRtuResponse parsed;
+  const uint16_t values[3] = {0x1111U, 0x2222U, 0x3333U};
+  uint8_t request[32];
+  uint8_t response[16];
+  uint16_t request_length;
+  uint16_t response_length;
+
+  ModbusRtu_Init(&server,
+                 2U,
+                 (UINT64_C(1) << 0x21U) | (UINT64_C(1) << 0x22U) |
+                     (UINT64_C(1) << 0x23U));
+  request_length = ModbusRtu_BuildWriteMultipleRequest(2U,
+                                                       0x21U,
+                                                       values,
+                                                       3U,
+                                                       request,
+                                                       sizeof(request));
+
+  CHECK(request_length == 15U);
+  response_length = ModbusRtu_Process(&server,
+                                      request,
+                                      request_length,
+                                      response,
+                                      sizeof(response));
+
+  CHECK(response_length == 8U);
+  CHECK(server.registers[0x21U] == 0x1111U);
+  CHECK(server.registers[0x22U] == 0x2222U);
+  CHECK(server.registers[0x23U] == 0x3333U);
+  CHECK(ModbusRtu_ParseResponse(2U, response, response_length, &parsed) == true);
+  CHECK(parsed.address == 0x21U);
+  CHECK(parsed.quantity == 3U);
+  return true;
+}
+
+static bool TestMasterParsesException(void)
+{
+  ModbusRtuResponse parsed;
+  uint8_t response[8];
+  uint16_t response_length;
+
+  response[0] = 3U;
+  response[1] = (uint8_t)(MODBUS_RTU_FUNCTION_READ_HOLDING | 0x80U);
+  response[2] = MODBUS_RTU_EXCEPTION_ILLEGAL_ADDRESS;
+  response_length = AppendCrc(response, 3U);
+
+  CHECK(ModbusRtu_ParseResponse(3U, response, response_length, &parsed) == true);
+  CHECK(parsed.exception_code == MODBUS_RTU_EXCEPTION_ILLEGAL_ADDRESS);
+  CHECK(parsed.function == MODBUS_RTU_FUNCTION_READ_HOLDING);
+  CHECK(parsed.register_count == 0U);
+  return true;
+}
+
+static bool TestMasterRejectsMalformedResponse(void)
+{
+  ModbusRtuResponse parsed;
+  uint8_t response[16];
+  uint16_t response_length;
+
+  response[0] = 1U;
+  response[1] = MODBUS_RTU_FUNCTION_READ_HOLDING;
+  response[2] = 4U;
+  response[3] = 0x12U;
+  response[4] = 0x34U;
+  response[5] = 0xABU;
+  response[6] = 0xCDU;
+  response_length = AppendCrc(response, 7U);
+
+  CHECK(ModbusRtu_ParseResponse(2U, response, response_length, &parsed) == false);
+
+  response[response_length - 1U] ^= 0xFFU;
+  CHECK(ModbusRtu_ParseResponse(1U, response, response_length, &parsed) == false);
+
+  response_length = AppendCrc(response, 7U);
+  response[2] = 3U;
+  response[7] = 0U;
+  response[8] = 0U;
+  response_length = AppendCrc(response, 9U);
+  CHECK(ModbusRtu_ParseResponse(1U, response, response_length, &parsed) == false);
+
+  CHECK(ModbusRtu_ParseResponse(1U, response, 4U, &parsed) == false);
+  CHECK(ModbusRtu_ParseResponse(1U, NULL, 8U, &parsed) == false);
+  CHECK(ModbusRtu_ParseResponse(1U, response, response_length, NULL) == false);
+  return true;
+}
+
 typedef bool (*TestFunction)(void);
 
 typedef struct
@@ -303,6 +505,12 @@ int main(void)
       {"illegal quantity exception", TestIllegalQuantityException},
       {"bad crc ignored", TestBadCrcIsIgnored},
       {"wrong slave ignored", TestWrongSlaveIsIgnored},
+      {"master build read request", TestMasterBuildReadRequest},
+      {"master read round trip", TestMasterReadRoundTrip},
+      {"master write single round trip", TestMasterWriteSingleRoundTrip},
+      {"master write multiple round trip", TestMasterWriteMultipleRoundTrip},
+      {"master parses exception", TestMasterParsesException},
+      {"master rejects malformed response", TestMasterRejectsMalformedResponse},
   };
 
   for (size_t index = 0U; index < (sizeof(tests) / sizeof(tests[0])); index++)

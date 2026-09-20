@@ -44,8 +44,8 @@
 | 通信协议 | `AA 55` 帧头、版本、消息类型、序号、长度、256 字节载荷和 CRC-16 |
 | 状态管理 | `device_state` 统一保存设备快照，使用 mutex 保证任务读取一致性 |
 | 采集控制 | 8 路 24 位模拟采集、PT100 或 PT1000 温度采集、8 路隔离数字输入、8 路继电器和 2 路模拟输出 |
-| 现场通信 | RS485、RS232 和 CAN，收发器与控制侧隔离 |
-| Modbus RTU | RS485 从站，支持 `0x03` 读保持寄存器、`0x06` 写单寄存器和 `0x10` 写多个寄存器 |
+| 现场通信 | RS485、RS232 和 CAN，收发器与控制侧隔离；RS232 与 CAN 中断接收后上报到网络侧 |
+| Modbus RTU | RS485 从站（`0x03`、`0x06`、`0x10`）与主站请求编解码库，主机侧单元测试覆盖 |
 | 监控界面 | 自写 Tabler 控制台、Home Assistant 实体模型和 Mushroom 原生 Dashboard |
 | 工程实现 | STM32 与 ESP32-S3 两套固件独立构建，共享协议和 Modbus 通过 GitHub Actions 自动测试 |
 
@@ -61,6 +61,8 @@
 - STM32 保存最近 16 条命令结果，重复请求不会再次执行输出。
 - 任务活性监督、栈余量、UART 丢包和事件队列丢包可进入统一状态快照。
 - STM32 提供 Modbus RTU 从站，上位机可以读取 AI、电源、温度、DI、继电器和故障位。
+- STM32 以中断方式接收 RS232（UART4）和 CAN 报文，通过 `0x13 BUS_RX` 消息上报，ESP32-S3 转发到 MQTT 主题 `industrial/bus`。
+- 自写控制台下发命令后等待新的 `COMMAND_ACK` 应答结果，并回读继电器掩码确认输出状态，超时或异常时显示具体原因。
 
 保留的扩展入口：
 
@@ -216,6 +218,7 @@ CRC 覆盖 `version` 到 `payload`，不覆盖帧头。所有多字节字段使�
 | `0x10` | `TELEMETRY` | STM32 到 ESP32-S3 | 上报采集值、输入、输出和电源状态 |
 | `0x11` | `EVENT` | STM32 到 ESP32-S3 | 上报输入变化和继电器变化 |
 | `0x12` | `DIAGNOSTICS` | STM32 到 ESP32-S3 | 上报任务活性、栈余量和错误计数 |
+| `0x13` | `BUS_RX` | STM32 到 ESP32-S3 | 上报 RS232 数据段或 CAN 报文 |
 | `0x20` | `COMMAND` | ESP32-S3 到 STM32 | 请求输出或配置操作 |
 | `0x21` | `COMMAND_ACK` | STM32 到 ESP32-S3 | 返回命令结果 |
 
@@ -243,6 +246,8 @@ CRC 覆盖 `version` 到 `payload`，不覆盖帧头。所有多字节字段使�
 ### Modbus RTU 从站
 
 STM32 通过 RS485 提供 Modbus RTU 从站，从站地址为 `1`。支持 `0x03`、`0x06` 和 `0x10`，寄存器覆盖 AI、电源、RTD、DI、继电器、故障位、继电器命令、DAC 和故障清除。
+
+同一份 `modbus_rtu` 模块还提供主站侧请求构造函数和响应解析函数（`ModbusRtu_BuildReadRequest()`、`ModbusRtu_BuildWriteSingleRequest()`、`ModbusRtu_BuildWriteMultipleRequest()`、`ModbusRtu_ParseResponse()`），校验从站地址、CRC、异常码和帧长，主站与从站之间已完成回环单元测试。下游从站设备接入 RS485 总线后即可开启轮询。
 
 详细寄存器表见 [Modbus RTU 从站](Software/MODBUS.md)。
 
@@ -426,7 +431,7 @@ Documentation/
 - 完成 OTA 固件升级和远程参数服务。
 - 增加 LCD 状态页、报警页和参数配置页。
 - 完成 ADS1256、MAX31865 和模拟输出的实板标定。
-- 增加 Modbus RTU 主站轮询和更多现场设备寄存器映射。
+- 接入下游 Modbus 从站设备后启用主站轮询（帧编解码和回环测试已完成）。
 - 增加看门狗复位、链路故障和控制命令的自动化联调脚本。
 - 评估电池供电、功耗测量和掉电数据保护。
 

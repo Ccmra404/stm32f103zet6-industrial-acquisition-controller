@@ -562,6 +562,45 @@ static void BridgeTask(void *argument)
       }
     }
 
+    {
+      uint8_t bus_data[BRIDGE_BUS_RX_MAX_DATA];
+      uint16_t bus_length = FieldComm_ReadRs232Bytes(bus_data, sizeof(bus_data));
+
+      if (bus_length > 0U)
+      {
+        length = BridgeProtocol_BuildBusRx(s_bridge_sequence++,
+                                           BRIDGE_BUS_RS232,
+                                           0U,
+                                           bus_data,
+                                           (uint8_t)bus_length,
+                                           output,
+                                           sizeof(output));
+        if (length > 0U)
+        {
+          (void)HAL_UART_Transmit(&huart1, output, length, 20U);
+        }
+      }
+    }
+
+    {
+      FieldCommCanFrame can_frame;
+
+      while (FieldComm_ReadCanFrame(&can_frame, 0U) != 0U)
+      {
+        length = BridgeProtocol_BuildBusRx(s_bridge_sequence++,
+                                           BRIDGE_BUS_CAN,
+                                           can_frame.identifier,
+                                           can_frame.data,
+                                           can_frame.length,
+                                           output,
+                                           sizeof(output));
+        if (length > 0U)
+        {
+          (void)HAL_UART_Transmit(&huart1, output, length, 20U);
+        }
+      }
+    }
+
     if ((now - last_heartbeat_tick) >= HEARTBEAT_PERIOD_MS)
     {
       length = BridgeProtocol_BuildHeartbeat(s_bridge_sequence++,
@@ -845,6 +884,8 @@ void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
   {
     (void)HAL_UARTEx_ReceiveToIdle_DMA(&huart1, s_uart_rx_buffer, UART_RX_BUFFER_SIZE);
   }
+
+  FieldComm_OnUartError(huart);
 }
 
 void HAL_ADC_ErrorCallback(ADC_HandleTypeDef *hadc)

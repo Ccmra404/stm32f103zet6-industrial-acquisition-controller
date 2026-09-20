@@ -314,6 +314,10 @@ views:
             entity: sensor.industrial_controller_last_event
             name: 最近链路事件
             icon: mdi:history
+          - type: custom:mushroom-entity-card
+            entity: sensor.industrial_controller_last_bus_frame
+            name: 最近现场总线帧
+            icon: mdi:bus
           - type: conditional
             conditions:
               - entity: binary_sensor.industrial_controller_fault_active

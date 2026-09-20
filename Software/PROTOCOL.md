@@ -68,6 +68,7 @@ CRC 参数：
 | `0x10` | `TELEMETRY` | STM32 到 ESP32-S3 | 上报采集和输出快照 |
 | `0x11` | `EVENT` | STM32 到 ESP32-S3 | 上报输入变化和继电器变化 |
 | `0x12` | `DIAGNOSTICS` | STM32 到 ESP32-S3 | 上报任务活性、栈余量和错误计数 |
+| `0x13` | `BUS_RX` | STM32 到 ESP32-S3 | 上报 RS232 数据段或 CAN 报文 |
 | `0x20` | `COMMAND` | ESP32-S3 到 STM32 | 请求控制和配置操作 |
 | `0x21` | `COMMAND_ACK` | STM32 到 ESP32-S3 | 返回命令结果 |
 
@@ -175,6 +176,25 @@ bit 5 / index 5: modbusTask
 ```
 
 当前固件每 5 秒发送一次诊断帧。ESP32-S3 收到后更新状态缓存，并在控制台执行 `status` 时显示。
+
+## BUS_RX
+
+STM32 独占 RS232 和 CAN 收发器，收到的数据通过 `BUS_RX` 上报给 ESP32-S3。RS232 采用 UART4 中断接收，按 10 ms 周期把队列中最多 16 字节打包成一帧；CAN 使用 FIFO0 中断接收，一个报文一帧。
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `bus` | `uint8` | `1` 为 RS232，`2` 为 CAN |
+| `identifier` | `uint32` | CAN 标准帧或扩展帧仲裁域；RS232 为 `0` |
+| `length` | `uint8` | 数据长度，RS232 最大 16，CAN 最大 8 |
+| `data` | `uint8[]` | 数据内容 |
+
+载荷长度固定为 `6 + length` 字节。ESP32-S3 收到后统计 RS232/CAN 帧计数，并通过 MQTT 主题 `industrial/bus` 发布：
+
+```json
+{"bus":"can","id":291,"length":8,"data":"01 02 03 04 05 06 07 08","count":12}
+```
+
+`count` 为该总线上电后的累计帧数；RS232 的 `id` 固定为 `0`。
 
 ## COMMAND
 

@@ -72,8 +72,8 @@ STM32 使用 FreeRTOS 和 CMSIS-RTOS V2。系统节拍为 `1 ms`，开启抢占�
 | `config_store` | EEPROM 参数、版本和校验 | `ConfigStore_Load()`、`ConfigStore_Save()` |
 | `device_state` | 保存统一设备快照 | `DeviceState_Update*()`、`DeviceState_Get()` |
 | `bridge_protocol` | 帧构建、解析、CRC 和命令编解码 | `BridgeProtocol_*()` |
-| `field_comm` | RS485、RS232 和 CAN 发送 | `FieldComm_SendRs485()`、`FieldComm_SendCan()` |
-| `modbus_rtu` | Modbus RTU 从站、寄存器映射和异常响应 | `ModbusRtu_Process()` |
+| `field_comm` | RS485、RS232 和 CAN 收发；RS232（UART4 中断）和 CAN（FIFO0 中断）进入软件队列 | `FieldComm_SendRs232()`、`FieldComm_ReadRs232Bytes()`、`FieldComm_ReadCanFrame()` |
+| `modbus_rtu` | Modbus RTU 从站（寄存器映射、异常响应）与主站请求编解码 | `ModbusRtu_Process()`、`ModbusRtu_BuildReadRequest()`、`ModbusRtu_ParseResponse()` |
 | `monitorTask` | 24V、5V 监测和状态灯 | `DeviceState_UpdateSupplies()` |
 
 ## ESP32-S3 当前模块
@@ -85,7 +85,7 @@ STM32 使用 FreeRTOS 和 CMSIS-RTOS V2。系统节拍为 `1 ms`，开启抢占�
 | `command_router` | 发送命令、等待 ACK、超时重试 | `CommandRouterTask()` |
 | `console` | 解析 UART0 控制台命令 | `ConsoleTask()` |
 | `network` | WiFi、MQTT、JSON 遥测和 Home Assistant Discovery | `NetworkTask()` |
-| `state cache` | 保存最近一次遥测和在线状态 | `s_telemetry`、`s_state_lock` |
+| `state cache` | 保存最近一次遥测、诊断、现场总线帧和在线状态 | `s_telemetry`、`s_last_bus_rx`、`s_state_lock` |
 | `bridge_protocol` | 构建和解析协议帧 | `BridgeProtocol_*()` |
 | `diagnostics` | 任务活性、栈余量和错误计数 | `DIAGNOSTICS` 帧 |
 
@@ -122,7 +122,7 @@ bridge_uart -> STM32 bridge_uart -> command handler
                                   command ACK
 ```
 
-当前固件收到 `COMMAND_ACK` 后解析请求编号、命令编号、结果和补充信息。扩展业务层在收到 `OK` 后更新命令状态。
+当前固件收到 `COMMAND_ACK` 后解析请求编号、命令编号、结果和补充信息。ESP32-S3 在转发 ACK 时附带单调递增的 `seq`，自写控制台用它的变化判断“本次命令”是否已被 STM32 执行：只有拿到新的 `seq` 且 `result` 为 `0` 才提示成功，随后回读继电器掩码确认输出状态，超时、异常码和拒绝原因都会显示在控制台。
 
 ## STM32 任务
 
@@ -134,7 +134,7 @@ STM32 使用 CubeMX 生成 HAL 初始化，并配置 FreeRTOS。任务按职责�
 | `acqTask` | `High` | 100 ms | ADS1256 八通道采样和状态发布 |
 | `monitorTask` | `AboveNormal` | 50 ms | 24V、5V 监测和状态灯 |
 | `rtdTask` | `AboveNormal` | 500 ms | MAX31865 读取和故障检测 |
-| `bridgeTask` | `Normal` | 10 ms 循环 | UART 帧解析、心跳、遥测、事件和命令处理 |
+| `bridgeTask` | `Normal` | 10 ms 循环 | UART 帧解析、心跳、遥测、事件、命令处理，以及 RS232/CAN 接收上报 |
 | `modbusTask` | `Normal` | 2 ms 轮询 | RS485 Modbus RTU `0x03`、`0x06`、`0x10` 和输出执行 |
 
 中断和任务之间通过队列解耦。UART 空闲 DMA 回调只把接收字节投递到 `s_uart_rx_queue`，协议解析和命令处理由 `bridgeTask` 完成。

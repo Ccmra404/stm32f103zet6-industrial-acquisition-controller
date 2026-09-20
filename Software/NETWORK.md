@@ -208,8 +208,10 @@ industrial/ack
 示例：
 
 ```json
-{"id":101,"command":1,"result":0,"detail":0}
+{"id":101,"command":1,"result":0,"detail":0,"seq":42}
 ```
+
+`seq` 是 ESP32-S3 转发 ACK 时递增的应答序号。控制台先用 `seq` 判断是否为本次命令的新应答，再检查 `result` 和 `detail`，最后回读继电器掩码确认输出状态，避免把“Home Assistant 已接受请求”误判成“STM32 已执行”。
 
 链路不在 `ONLINE` 时，命令会被拒绝并返回 `result=4`，STM32 不会收到新的输出命令。
 
@@ -220,6 +222,23 @@ industrial/ack
 ```
 
 输出类命令的最小间隔为 `100 ms`，超过限制会返回 `result=3`。最近 16 条命令会进入本地审计环形缓存。
+
+## 现场总线接收
+
+STM32 收到的 RS232 数据和 CAN 报文通过 `BUS_RX` 桥接消息上报后，ESP32-S3 发布到：
+
+```text
+industrial/bus
+```
+
+示例：
+
+```json
+{"bus":"rs232","id":0,"length":5,"data":"48 65 6C 6C 6F","count":3}
+{"bus":"can","id":291,"length":8,"data":"10 20 30 40 50 60 70 80","count":7}
+```
+
+`count` 为对应总线上电后的累计接收帧数，可用于确认接收路径是否在工作。Home Assistant 会自动发现 `sensor.industrial_controller_last_bus_frame`，属性中包含 `id`、`length`、`data` 和 `count`。
 
 ## Home Assistant 自动发现
 

@@ -165,7 +165,10 @@
         <div class="value"><span>RELAY</span><strong id="relay">--</strong></div>
         <div class="value"><span>FAULT</span><strong id="fault">--</strong></div>
         <div class="value"><span>WATCHDOG</span><strong id="wdg">--</strong></div>
+        <div class="value"><span>RS232</span><strong id="rs232">--</strong></div>
+        <div class="value"><span>CAN</span><strong id="can">--</strong></div>
       </div>
+      <div id="busFrame" class="sub">最近现场总线帧：--</div>
     </section>
 
     <section class="wide">
@@ -317,6 +320,11 @@ async function refresh() {
     $("relay").textContent = hex(status.relay_bits, 2);
     $("fault").textContent = hex(status.fault_bits, 4);
     $("wdg").textContent = status.watchdog_refresh_count;
+    $("rs232").textContent = `${status.rs232_rx_frames ?? 0} 帧`;
+    $("can").textContent = `${status.can_rx_frames ?? 0} 帧`;
+    $("busFrame").textContent = status.last_bus
+      ? `最近现场总线帧：${status.last_bus.toUpperCase()} id=${status.last_bus_id} len=${status.last_bus_length} ${status.last_bus_data}`
+      : "最近现场总线帧：--";
 
     const events = await getJson("/api/events");
     $("events").innerHTML = events.length ? events.reverse().map((event) =>

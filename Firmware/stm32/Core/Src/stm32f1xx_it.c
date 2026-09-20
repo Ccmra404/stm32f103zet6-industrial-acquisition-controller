@@ -241,6 +241,14 @@ void DMA1_Channel5_IRQHandler(void)
 }
 
 /**
+  * @brief This function handles UART4 global interrupt.
+  */
+void UART4_IRQHandler(void)
+{
+  HAL_UART_IRQHandler(&huart4);
+}
+
+/**
   * @brief This function handles CAN1 RX0 interrupt.
   */
 void CAN1_RX0_IRQHandler(void)

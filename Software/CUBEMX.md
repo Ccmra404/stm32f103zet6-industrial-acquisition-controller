@@ -280,6 +280,7 @@ IWDG 由 `monitorTask` 统一刷新。只有 `controlTask`、`acqTask`、`monito
 | `EXTI3_IRQn` | ADS1256 DRDY | 通知采样任务 |
 | `EXTI9_5_IRQn` | MAX31865 DRDY | 通知温度任务 |
 | `CAN1_RX0_IRQn` | CAN 接收 | 把帧投递到队列 |
+| `UART4_IRQn` | RS232 接收 | 单字节中断接收，写入环形缓冲 |
 | `ADC1` DMA | 24V、5V 采样 | Circular |
 
 FreeRTOS 使用 `NVIC_PRIORITYGROUP_4`。调用 FreeRTOS API 的中断优先级必须低于 `configMAX_SYSCALL_INTERRUPT_PRIORITY`。不要在 EXTI 和 UART 中断里执行 SPI 事务、EEPROM 写入或 LCD 刷新。

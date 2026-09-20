@@ -63,6 +63,7 @@
 #define NETWORK_COMMAND_TOPIC "industrial/command"
 #define NETWORK_COMMAND_ACK_TOPIC "industrial/ack"
 #define NETWORK_AVAILABILITY_TOPIC "industrial/availability"
+#define NETWORK_BUS_TOPIC "industrial/bus"
 #define NETWORK_HA_DISCOVERY_PREFIX "homeassistant"
 #define NETWORK_HA_DEVICE_ID "industrial_controller_esp32"
 #define NETWORK_HA_TEMP_UNIT "\xC2\xB0" "C"
@@ -92,12 +93,18 @@ static const char *TAG = "industrial_bridge";
 static BridgeProtocolParser s_parser;
 static BridgeProtocolTelemetry s_telemetry;
 static BridgeProtocolDiagnostics s_diagnostics;
+static BridgeProtocolBusRx s_last_bus_rx;
 static portMUX_TYPE s_state_lock = portMUX_INITIALIZER_UNLOCKED;
 static bool s_diagnostics_valid;
+static bool s_last_bus_rx_valid;
+static uint32_t s_rs232_rx_frames;
+static uint32_t s_can_rx_frames;
+static uint32_t s_bus_rx_bytes;
 static QueueHandle_t s_command_queue;
 static QueueHandle_t s_ack_queue;
 static uint16_t s_command_sequence;
 static uint16_t s_request_id;
+static uint32_t s_ack_sequence;
 
 static esp_mqtt_client_handle_t s_mqtt_client;
 static char s_wifi_ssid[NETWORK_SSID_SIZE];
@@ -612,6 +619,17 @@ static void NetworkPublishHomeAssistantDiscovery(void)
                                 NETWORK_COMMAND_ACK_TOPIC,
                                 false,
                                 false);
+  NetworkPublishDiscoverySensor("industrial_controller_last_bus_frame",
+                                "最近现场总线帧",
+                                NETWORK_BUS_TOPIC,
+                                "{{ value_json.bus | upper }} x{{ value_json.length }}",
+                                NULL,
+                                NULL,
+                                NULL,
+                                "mdi:bus",
+                                NETWORK_BUS_TOPIC,
+                                true,
+                                false);
 
   NetworkPublishDiscoveryBinarySensor("industrial_controller_gateway_online",
                                       "网关在线",
@@ -677,6 +695,7 @@ static void NetworkPublishCommandResult(uint16_t request_id,
 {
   char payload[256];
   char topic[96];
+  uint32_t ack_sequence;
   int length;
 
   if ((s_mqtt_client == NULL) || !s_mqtt_connected)
@@ -684,27 +703,32 @@ static void NetworkPublishCommandResult(uint16_t request_id,
     return;
   }
 
+  ack_sequence = ++s_ack_sequence;
+
   if (reason != NULL)
   {
     length = snprintf(payload,
                       sizeof(payload),
                       "{\"id\":%u,\"command\":%u,\"result\":%d,"
-                      "\"detail\":%u,\"reason\":\"%s\"}",
+                      "\"detail\":%u,\"seq\":%lu,\"reason\":\"%s\"}",
                       (unsigned)request_id,
                       (unsigned)command_id,
                       result,
                       (unsigned)detail,
+                      (unsigned long)ack_sequence,
                       reason);
   }
   else
   {
     length = snprintf(payload,
                       sizeof(payload),
-                      "{\"id\":%u,\"command\":%u,\"result\":%d,\"detail\":%u}",
+                      "{\"id\":%u,\"command\":%u,\"result\":%d,"
+                      "\"detail\":%u,\"seq\":%lu}",
                       (unsigned)request_id,
                       (unsigned)command_id,
                       result,
-                      (unsigned)detail);
+                      (unsigned)detail,
+                      (unsigned long)ack_sequence);
   }
 
   if (length <= 0)
@@ -745,9 +769,77 @@ static void NetworkPublishCommandAck(const BridgeProtocolAck *ack)
                               ack->detail,
                               NULL);
   NetworkSecurity_Record(ack->request_id,
-                         ack->command_id,
-                         ack->result,
-                         ack->detail);
+                        ack->command_id,
+                        ack->result,
+                        ack->detail);
+}
+
+static const char *BusRxName(uint8_t bus)
+{
+  return (bus == BRIDGE_BUS_CAN) ? "can" : "rs232";
+}
+
+static void BusRxDataToHex(const BridgeProtocolBusRx *bus_rx,
+                           char *output,
+                           size_t output_size)
+{
+  size_t position = 0U;
+
+  if ((bus_rx == NULL) || (output == NULL) || (output_size == 0U))
+  {
+    return;
+  }
+
+  output[0] = '\0';
+  for (uint8_t index = 0U; index < bus_rx->length; index++)
+  {
+    int written = snprintf(&output[position],
+                           output_size - position,
+                           (index == 0U) ? "%02X" : " %02X",
+                           bus_rx->data[index]);
+
+    if ((written <= 0) || ((size_t)written >= (output_size - position)))
+    {
+      return;
+    }
+    position += (size_t)written;
+  }
+}
+
+static void NetworkPublishBusFrame(const BridgeProtocolBusRx *bus_rx,
+                                   uint32_t bus_frame_count)
+{
+  char payload[192];
+  char hex[3U * BRIDGE_BUS_RX_MAX_DATA];
+  int length;
+
+  if ((bus_rx == NULL) || (s_mqtt_client == NULL) || !s_mqtt_connected ||
+      (s_network_platform != NETWORK_PLATFORM_CUSTOM))
+  {
+    return;
+  }
+
+  BusRxDataToHex(bus_rx, hex, sizeof(hex));
+  length = snprintf(payload,
+                    sizeof(payload),
+                    "{\"bus\":\"%s\",\"id\":%lu,\"length\":%u,"
+                    "\"data\":\"%s\",\"count\":%lu}",
+                    BusRxName(bus_rx->bus),
+                    (unsigned long)bus_rx->identifier,
+                    (unsigned)bus_rx->length,
+                    hex,
+                    (unsigned long)bus_frame_count);
+  if (length <= 0)
+  {
+    return;
+  }
+
+  (void)esp_mqtt_client_publish(s_mqtt_client,
+                                NETWORK_BUS_TOPIC,
+                                payload,
+                                0,
+                                0,
+                                0);
 }
 
 static bool JsonReadUint(const cJSON *root,
@@ -892,6 +984,40 @@ static void HandleFrame(const BridgeProtocolFrame *frame)
         {
           (void)xQueueSend(s_ack_queue, &ack, 0U);
         }
+      }
+      break;
+    }
+
+    case BRIDGE_MSG_BUS_RX:
+    {
+      BridgeProtocolBusRx bus_rx;
+
+      if (BridgeProtocol_ParseBusRx(frame, &bus_rx))
+      {
+        uint32_t bus_frame_count;
+
+        portENTER_CRITICAL(&s_state_lock);
+        s_last_bus_rx = bus_rx;
+        s_last_bus_rx_valid = true;
+        s_bus_rx_bytes += bus_rx.length;
+        if (bus_rx.bus == BRIDGE_BUS_CAN)
+        {
+          s_can_rx_frames++;
+          bus_frame_count = s_can_rx_frames;
+        }
+        else
+        {
+          s_rs232_rx_frames++;
+          bus_frame_count = s_rs232_rx_frames;
+        }
+        portEXIT_CRITICAL(&s_state_lock);
+
+        ESP_LOGI(TAG,
+                 "bus rx %s id=%lu length=%u",
+                 BusRxName(bus_rx.bus),
+                 (unsigned long)bus_rx.identifier,
+                 (unsigned)bus_rx.length);
+        NetworkPublishBusFrame(&bus_rx, bus_frame_count);
       }
       break;
     }
@@ -2162,6 +2288,54 @@ static void WebBuildStatusJson(char *output, size_t output_size)
     WebAppend(output, output_size, &position,
               ",\"alive_bits\":0,\"watchdog_refresh_count\":0");
   }
+
+  {
+    BridgeProtocolBusRx bus_rx;
+    bool bus_valid;
+    uint32_t rs232_frames;
+    uint32_t can_frames;
+    uint32_t bus_bytes;
+    char hex[3U * BRIDGE_BUS_RX_MAX_DATA];
+
+    portENTER_CRITICAL(&s_state_lock);
+    bus_rx = s_last_bus_rx;
+    bus_valid = s_last_bus_rx_valid;
+    rs232_frames = s_rs232_rx_frames;
+    can_frames = s_can_rx_frames;
+    bus_bytes = s_bus_rx_bytes;
+    portEXIT_CRITICAL(&s_state_lock);
+
+    WebAppend(output,
+              output_size,
+              &position,
+              ",\"rs232_rx_frames\":%lu,\"can_rx_frames\":%lu,\"bus_rx_bytes\":%lu",
+              (unsigned long)rs232_frames,
+              (unsigned long)can_frames,
+              (unsigned long)bus_bytes);
+
+    if (bus_valid)
+    {
+      BusRxDataToHex(&bus_rx, hex, sizeof(hex));
+      WebAppend(output,
+                output_size,
+                &position,
+                ",\"last_bus\":\"%s\",\"last_bus_id\":%lu,"
+                "\"last_bus_length\":%u,\"last_bus_data\":\"%s\"",
+                BusRxName(bus_rx.bus),
+                (unsigned long)bus_rx.identifier,
+                (unsigned)bus_rx.length,
+                hex);
+    }
+    else
+    {
+      WebAppend(output,
+                output_size,
+                &position,
+                ",\"last_bus\":null,\"last_bus_id\":0,"
+                "\"last_bus_length\":0,\"last_bus_data\":\"\"");
+    }
+  }
+
   WebAppend(output, output_size, &position, "}");
 }
 

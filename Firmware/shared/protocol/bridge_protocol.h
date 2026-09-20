@@ -19,8 +19,13 @@ extern "C" {
 #define BRIDGE_MSG_TELEMETRY 0x10U
 #define BRIDGE_MSG_EVENT 0x11U
 #define BRIDGE_MSG_DIAGNOSTICS 0x12U
+#define BRIDGE_MSG_BUS_RX 0x13U
 #define BRIDGE_MSG_COMMAND 0x20U
 #define BRIDGE_MSG_COMMAND_ACK 0x21U
+
+#define BRIDGE_BUS_RS232 1U
+#define BRIDGE_BUS_CAN 2U
+#define BRIDGE_BUS_RX_MAX_DATA 16U
 
 #define BRIDGE_DIAGNOSTIC_TASK_COUNT 6U
 
@@ -125,6 +130,19 @@ typedef struct
   uint16_t task_stack_free[BRIDGE_DIAGNOSTIC_TASK_COUNT];
 } BridgeProtocolDiagnostics;
 
+/*
+ * Field-bus receive notification: the STM32 owns the RS232/CAN
+ * peripherals, so incoming frames are forwarded to the ESP32 as they
+ * arrive. identifier is the CAN arbitration id, or 0 for RS232.
+ */
+typedef struct
+{
+  uint8_t bus;
+  uint32_t identifier;
+  uint8_t length;
+  uint8_t data[BRIDGE_BUS_RX_MAX_DATA];
+} BridgeProtocolBusRx;
+
 uint16_t BridgeProtocol_Crc16(const uint8_t *data, uint16_t length);
 void BridgeProtocol_ParserInit(BridgeProtocolParser *parser);
 bool BridgeProtocol_ParserPushByte(BridgeProtocolParser *parser,
@@ -174,6 +192,14 @@ uint16_t BridgeProtocol_BuildDiagnostics(uint16_t sequence,
                                          uint8_t *output,
                                          uint16_t output_size);
 
+uint16_t BridgeProtocol_BuildBusRx(uint16_t sequence,
+                                   uint8_t bus,
+                                   uint32_t identifier,
+                                   const uint8_t *data,
+                                   uint8_t length,
+                                   uint8_t *output,
+                                   uint16_t output_size);
+
 uint16_t BridgeProtocol_BuildCommandAck(uint16_t sequence,
                                         uint16_t request_id,
                                         uint16_t command_id,
@@ -202,6 +228,8 @@ bool BridgeProtocol_ParseTelemetry(const BridgeProtocolFrame *frame,
 
 bool BridgeProtocol_ParseDiagnostics(const BridgeProtocolFrame *frame,
                                      BridgeProtocolDiagnostics *diagnostics);
+bool BridgeProtocol_ParseBusRx(const BridgeProtocolFrame *frame,
+                               BridgeProtocolBusRx *bus_rx);
 bool BridgeProtocol_ParseCommandAck(const BridgeProtocolFrame *frame,
                                     BridgeProtocolAck *ack);
 
