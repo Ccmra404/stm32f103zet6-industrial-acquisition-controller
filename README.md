@@ -23,6 +23,12 @@
   <a href="#项目资料">项目资料</a>
 </p>
 
+<p align="center">
+  <a href="Documentation/images/home-assistant-dashboard.png">
+    <img src="https://cdn.jsdelivr.net/gh/Ccmra404/stm32f103zet6-industrial-acquisition-controller@main/Documentation/images/home-assistant-dashboard.png?v=dashboard1" width="100%" alt="工业采集控制终端自写控制台">
+  </a>
+</p>
+
 ## 项目定位
 
 这是一套面向工业采集与控制场景的双处理器终端。STM32F103ZET6 运行 FreeRTOS，承担采样、控制、报警、存储和现场总线任务。ESP32-S3 运行 ESP-IDF，负责板间桥接、状态缓存和远程服务入口。
