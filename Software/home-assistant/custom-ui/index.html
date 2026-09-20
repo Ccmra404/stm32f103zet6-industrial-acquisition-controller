@@ -215,6 +215,26 @@
       animation: value-flash .45s ease-out;
     }
 
+    .chart-empty {
+      position: absolute;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      color: var(--muted);
+      font-size: 13px;
+      background: rgba(244, 246, 249, .72);
+    }
+
+    .stale-badge {
+      margin-left: 6px;
+      font-size: 10px;
+      padding: 1px 5px;
+    }
+
+    .bit.unavailable {
+      opacity: .45;
+    }
+
     @keyframes value-flash {
       from { background: rgba(32, 107, 196, .14); }
       to { background: transparent; }
@@ -417,6 +437,9 @@
           </header>
 
           <div id="errorAlert" class="alert alert-danger app-hidden" role="alert"></div>
+          <div id="offlineAlert" class="alert alert-warning app-hidden" role="status" aria-live="polite">
+            <span id="offlineText">网关离线</span>
+          </div>
 
           <section id="overview" class="row row-deck row-cards mb-3">
             <div class="col-sm-6 col-xl-3">
@@ -492,6 +515,7 @@
                 <div class="card-body">
                   <div class="chart-shell">
                     <canvas id="aiChart" aria-label="模拟量趋势图"></canvas>
+                    <div id="chartEmpty" class="chart-empty">暂无采样数据</div>
                   </div>
                 </div>
               </article>
@@ -664,6 +688,6 @@
   <script src="https://cdn.jsdelivr.net/npm/@tabler/core@1.5.1/dist/js/tabler.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.1/dist/chart.umd.min.js"></script>
   <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js"></script>
-  <script src="/app.js?v=ack1"></script>
+  <script src="/app.js?v=ack2"></script>
 </body>
 </html>

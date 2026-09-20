@@ -48,6 +48,8 @@ const RESULT_TEXT = {
 const ACK_POLL_INTERVAL_MS = 250;
 const ACK_TIMEOUT_MS = 6000;
 const STATE_TIMEOUT_MS = 4000;
+const STALE_AFTER_MS = 15000;
+const UNAVAILABLE_STATES = new Set(["", "unavailable", "unknown", "none", "null"]);
 
 const state = {
   mode: "login",
@@ -56,7 +58,11 @@ const state = {
   chart: null,
   demoTimer: null,
   demoStep: 0,
+  commandPending: false,
+  pollErrors: 0,
 };
+
+let demoRelayMask = 0b00101101;
 
 function refreshIcons() {
   if (window.lucide) window.lucide.createIcons();
@@ -82,6 +88,9 @@ function showApp(mode) {
   setVisible($("demoBadge"), mode === "demo");
   $("commandMode").textContent = mode === "demo" ? "演示控制" : "HA 控制";
   $("commandMode").className = mode === "demo" ? "badge bg-orange-lt" : "badge bg-green-lt";
+  $("commandResult").textContent = mode === "demo"
+    ? "演示模式：命令只在本地模拟，不会下发到设备。"
+    : "命令下发后等待 STM32 应答，失败时显示具体原因。";
   refreshIcons();
 }
 
@@ -98,14 +107,55 @@ function stateClass(value) {
   return "";
 }
 
+function entityRecord(entityId) {
+  return state.latest[entityId] ?? null;
+}
+
+function isUnavailable(entityId) {
+  if (state.mode === "demo") return state.latest[entityId] === undefined;
+  const record = entityRecord(entityId);
+  if (!record) return true;
+  return UNAVAILABLE_STATES.has(String(record.state ?? "").trim().toLowerCase());
+}
+
 function entityValue(entityId, fallback = "--") {
   if (state.mode === "demo") return state.latest[entityId] ?? fallback;
-  return state.latest[entityId]?.state ?? fallback;
+  if (isUnavailable(entityId)) return fallback;
+  return entityRecord(entityId).state;
 }
 
 function numberValue(entityId, fallback = 0) {
   const value = Number(entityValue(entityId, NaN));
   return Number.isFinite(value) ? value : fallback;
+}
+
+function formatMeasurement(entityId, digits, unit = "") {
+  const value = Number(entityValue(entityId, NaN));
+  return Number.isFinite(value) ? `${value.toFixed(digits)}${unit}` : "--";
+}
+
+function entityUpdatedAt(entityId) {
+  const record = entityRecord(entityId);
+  if (!record?.last_updated) return null;
+  const timestamp = new Date(record.last_updated);
+  return Number.isNaN(timestamp.getTime()) ? null : timestamp;
+}
+
+function isStale(entityId, limitMs = STALE_AFTER_MS) {
+  if (state.mode === "demo") return false;
+  const updatedAt = entityUpdatedAt(entityId);
+  if (!updatedAt) return true;
+  return Date.now() - updatedAt.getTime() > limitMs;
+}
+
+function formatClock(timestamp) {
+  return timestamp ? timestamp.toLocaleTimeString("zh-CN", { hour12: false }) : "--";
+}
+
+function formatBitField(value, width) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return "--";
+  return `${hex(number, width)} · ${number}`;
 }
 
 function formatInteger(value) {
@@ -154,9 +204,17 @@ function createChart() {
 
 function appendChartPoint() {
   createChart();
+  const values = [];
+  for (let index = 0; index < 8; index += 1) {
+    values.push(numberValue(`sensor.industrial_controller_ai_${index}`, null));
+  }
+  const hasSample = values.some((value) => Number.isFinite(value));
+  setVisible($("chartEmpty"), !hasSample && state.chart.data.labels.length === 0);
+  if (!hasSample) return;
+
   state.chart.data.labels.push(new Date().toLocaleTimeString("zh-CN", { hour12: false }));
   for (let index = 0; index < 8; index += 1) {
-    state.chart.data.datasets[index].data.push(numberValue(`sensor.industrial_controller_ai_${index}`, null));
+    state.chart.data.datasets[index].data.push(values[index]);
   }
   while (state.chart.data.labels.length > 40) {
     state.chart.data.labels.shift();
@@ -164,6 +222,7 @@ function appendChartPoint() {
   }
   state.chart.update();
   $("sampleCount").textContent = `${state.chart.data.labels.length} samples`;
+  setVisible($("chartEmpty"), state.chart.data.labels.length === 0);
 }
 
 function renderAiGrid() {
@@ -171,7 +230,7 @@ function renderAiGrid() {
     const id = `sensor.industrial_controller_ai_${index}`;
     return `
       <div class="col-6">
-        <div class="io-tile">
+        <div class="io-tile${isUnavailable(id) ? " text-secondary" : ""}">
           <div class="label">AI${index}</div>
           <div class="value">${formatInteger(entityValue(id))}</div>
         </div>
@@ -179,86 +238,139 @@ function renderAiGrid() {
   }).join("");
 }
 
-function renderBits(element, value, count) {
+function renderBits(element, value, count, unavailable = false) {
   const number = Number(value);
   element.innerHTML = Array.from({ length: count }, (_, index) => {
     const active = Number.isFinite(number) && ((number >> index) & 1) === 1;
-    return `<span class="bit ${active ? "active" : ""}">${index}</span>`;
+    const classes = ["bit", active ? "active" : "", unavailable ? "unavailable" : ""].filter(Boolean).join(" ");
+    return `<span class="${classes}">${index}</span>`;
   }).join("");
 }
 
 function renderRelayBits(value) {
   const number = Number(value);
+  const unavailable = isUnavailable(ENTITY.relay);
   $("relayBits").innerHTML = Array.from({ length: 8 }, (_, index) => {
     const active = Number.isFinite(number) && ((number >> index) & 1) === 1;
-    return `<button type="button" class="bit ${active ? "active" : ""}" data-relay="${index}" title="切换继电器 ${index + 1}">${index}</button>`;
+    const classes = ["bit", active ? "active" : "", unavailable ? "unavailable" : ""].filter(Boolean).join(" ");
+    const disabled = state.commandPending || unavailable ? " disabled" : "";
+    return `<button type="button" class="${classes}" data-relay="${index}" aria-pressed="${active}"`
+      + ` aria-label="切换继电器 ${index + 1}" title="切换继电器 ${index + 1}"${disabled}>${index}</button>`;
   }).join("");
 }
 
 function renderTelemetryTable() {
   const rows = [
-    [ENTITY.linkState, "链路状态"],
-    [ENTITY.linkAge, "链路延迟"],
-    [ENTITY.rtd, "RTD 温度"],
-    [ENTITY.supply24, "24V 电源"],
-    [ENTITY.supply5, "5V 电源"],
-    [ENTITY.di, "DI 位图"],
-    [ENTITY.relay, "继电器位图"],
-    [ENTITY.fault, "故障位图"],
-    [ENTITY.wdg, "看门狗刷新"],
-    [ENTITY.lastAck, "最近命令应答"],
-    [ENTITY.busFrame, "最近现场总线帧"],
-  ].map(([entity, label]) => `
+    [ENTITY.linkState, "链路状态", (value) => value],
+    [ENTITY.linkAge, "链路延迟", (value) => `${formatInteger(value)} ms`],
+    [ENTITY.rtd, "RTD 温度", () => formatMeasurement(ENTITY.rtd, 2, " °C")],
+    [ENTITY.supply24, "24V 电源", () => formatMeasurement(ENTITY.supply24, 2, " V")],
+    [ENTITY.supply5, "5V 电源", () => formatMeasurement(ENTITY.supply5, 2, " V")],
+    [ENTITY.di, "DI 位图", (value) => formatBitField(value, 2)],
+    [ENTITY.relay, "继电器位图", (value) => formatBitField(value, 2)],
+    [ENTITY.fault, "故障位图", (value) => formatBitField(value, 4)],
+    [ENTITY.wdg, "看门狗刷新", (value) => formatInteger(value)],
+    [ENTITY.lastAck, "最近命令应答", (value) => value],
+    [ENTITY.busFrame, "最近现场总线帧", (value) => value],
+  ].map(([entity, label, format]) => {
+    const raw = entityValue(entity);
+    const unavailable = isUnavailable(entity);
+    const stale = !unavailable && isStale(entity);
+    const stamp = state.mode === "demo" ? new Date() : entityUpdatedAt(entity);
+    const timeCell = unavailable
+      ? "--"
+      : `${formatClock(stamp)}${stale ? ' <span class="badge bg-orange-lt stale-badge">陈旧</span>' : ""}`;
+
+    return `
     <tr>
       <td><code>${label}</code></td>
-      <td>${entityValue(entity)}</td>
-      <td>${new Date().toLocaleTimeString("zh-CN", { hour12: false })}</td>
-    </tr>`);
+      <td>${unavailable ? "--" : format(raw)}</td>
+      <td>${timeCell}</td>
+    </tr>`;
+  });
   $("telemetryTable").innerHTML = rows.join("");
 }
 
 function render() {
   const linkState = String(entityValue(ENTITY.linkState, "--"));
+  const linkUnavailable = isUnavailable(ENTITY.linkState);
   $("linkState").textContent = linkState;
-  $("linkState").className = `metric-value mt-3 ${stateClass(linkState)}`.trim();
-  $("linkMeta").textContent = `age=${formatInteger(entityValue(ENTITY.linkAge))}ms · reconnects=${formatInteger(entityValue(ENTITY.reconnects))}`;
+  $("linkState").className = `metric-value mt-3 ${linkUnavailable ? "text-secondary" : stateClass(linkState)}`.trim();
+  $("linkMeta").textContent = linkUnavailable
+    ? "等待 ESP32-S3 上报"
+    : `age=${formatInteger(entityValue(ENTITY.linkAge))} ms · 重连 ${formatInteger(entityValue(ENTITY.reconnects))}`;
 
   $("ai0Value").textContent = formatInteger(entityValue("sensor.industrial_controller_ai_0"));
-  $("aiMeta").textContent = `AI1 ${formatInteger(entityValue("sensor.industrial_controller_ai_1"))} · AI2 ${formatInteger(entityValue("sensor.industrial_controller_ai_2"))} · AI3 ${formatInteger(entityValue("sensor.industrial_controller_ai_3"))}`;
+  $("aiMeta").textContent = isUnavailable("sensor.industrial_controller_ai_1")
+    ? "8 路模拟输入 · 暂无数据"
+    : `AI1 ${formatInteger(entityValue("sensor.industrial_controller_ai_1"))} · AI2 ${formatInteger(entityValue("sensor.industrial_controller_ai_2"))} · AI3 ${formatInteger(entityValue("sensor.industrial_controller_ai_3"))}`;
 
-  const rtd = Number(entityValue(ENTITY.rtd, NaN));
-  $("rtdValue").textContent = Number.isFinite(rtd) ? `${rtd.toFixed(2)} °C` : "--";
+  $("rtdValue").textContent = formatMeasurement(ENTITY.rtd, 2, " °C");
 
-  const supply24 = Number(entityValue(ENTITY.supply24, NaN));
-  const supply5 = Number(entityValue(ENTITY.supply5, NaN));
-  $("supplyValue").textContent = Number.isFinite(supply24) && Number.isFinite(supply5)
-    ? `${supply24.toFixed(2)} / ${supply5.toFixed(2)} V`
-    : "--";
-  $("supplyMeta").textContent = `24V ${Number.isFinite(supply24) ? supply24.toFixed(2) : "--"}V · 5V ${Number.isFinite(supply5) ? supply5.toFixed(2) : "--"}V`;
+  const supply24 = formatMeasurement(ENTITY.supply24, 2);
+  const supply5 = formatMeasurement(ENTITY.supply5, 2);
+  const supplyReady = supply24 !== "--" && supply5 !== "--";
+  $("supplyValue").textContent = supplyReady ? `${supply24} / ${supply5} V` : "--";
+  $("supplyMeta").textContent = supplyReady
+    ? `24V ${supply24}V · 5V ${supply5}V`
+    : "24V / 5V · 暂无数据";
 
   $("faultValue").textContent = hex(entityValue(ENTITY.fault), 4);
   $("watchdogValue").textContent = formatInteger(entityValue(ENTITY.wdg));
-  $("linkAge").textContent = `${formatInteger(entityValue(ENTITY.linkAge))} ms`;
+  $("linkAge").textContent = isUnavailable(ENTITY.linkAge)
+    ? "--"
+    : `${formatInteger(entityValue(ENTITY.linkAge))} ms`;
   $("reconnects").textContent = formatInteger(entityValue(ENTITY.reconnects));
   $("timeouts").textContent = formatInteger(entityValue(ENTITY.timeouts));
   $("alive").textContent = hex(entityValue(ENTITY.alive), 4);
   $("lastUpdate").textContent = `最后更新 ${new Date().toLocaleTimeString("zh-CN", { hour12: false })}`;
 
   const gateway = entityValue(ENTITY.gateway) === "on";
+  setVisible($("offlineAlert"), state.mode === "real" && !gateway);
+  if (!gateway) {
+    $("offlineText").textContent = linkUnavailable
+      ? "网关离线：ESP32-S3 与 STM32 均未上报数据，页面保留最后一次可用的状态快照"
+      : `网关离线：设备数据可能已过期，最近一次上报 ${formatClock(entityUpdatedAt(ENTITY.linkState))}`;
+  }
   setStatus(
     state.mode === "demo" ? "演示数据运行中" : gateway ? "已连接 Home Assistant" : "网关离线",
     gateway ? "online" : "offline"
   );
 
   renderAiGrid();
-  renderBits($("diBits"), entityValue(ENTITY.di), 8);
+  renderBits($("diBits"), entityValue(ENTITY.di), 8, isUnavailable(ENTITY.di));
   renderRelayBits(entityValue(ENTITY.relay));
   renderTelemetryTable();
   appendChartPoint();
   refreshIcons();
 }
 
-async function haApi(path, options = {}) {
+async function refreshAccessToken() {
+  const refreshToken = state.tokens?.refresh_token;
+  if (!refreshToken) return false;
+
+  const response = await fetch("/auth/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      grant_type: "refresh_token",
+      refresh_token: refreshToken,
+      client_id: state.tokens.clientId,
+    }),
+  });
+  if (!response.ok) return false;
+
+  const tokens = await response.json();
+  state.tokens = {
+    ...state.tokens,
+    ...tokens,
+    expires: Date.now() + Number(tokens.expires_in ?? 1800) * 1000,
+  };
+  localStorage.setItem("haTokens", JSON.stringify(state.tokens));
+  return true;
+}
+
+async function haApi(path, options = {}, allowRetry = true) {
   const response = await fetch(path, {
     ...options,
     headers: {
@@ -268,6 +380,9 @@ async function haApi(path, options = {}) {
     },
   });
   if (response.status === 401) {
+    if (allowRetry && (await refreshAccessToken().catch(() => false))) {
+      return haApi(path, options, false);
+    }
     state.tokens = null;
     localStorage.removeItem("haTokens");
     showLogin("登录已过期，请重新登录。");
@@ -281,9 +396,20 @@ async function haApi(path, options = {}) {
 }
 
 async function fetchStates() {
-  const states = await haApi("/api/states");
-  state.latest = Object.fromEntries(states.map((entity) => [entity.entity_id, entity]));
-  render();
+  try {
+    const states = await haApi("/api/states");
+    state.latest = Object.fromEntries(states.map((entity) => [entity.entity_id, entity]));
+    state.pollErrors = 0;
+    setVisible($("errorAlert"), false);
+    render();
+  } catch (error) {
+    state.pollErrors += 1;
+    if (state.pollErrors >= 2) {
+      $("errorAlert").textContent = `无法读取 Home Assistant 状态：${error.message}`;
+      setVisible($("errorAlert"), true);
+    }
+    throw error;
+  }
 }
 
 async function login(event) {
@@ -388,16 +514,29 @@ async function waitForNumberState(entityId, expected, timeoutMs = STATE_TIMEOUT_
   throw new Error(`设备状态未确认（当前 ${last ?? "--"}，期望 ${expected}）`);
 }
 
+function setCommandPending(pending) {
+  state.commandPending = pending;
+  document.querySelectorAll(".command-button").forEach((button) => {
+    button.disabled = pending;
+  });
+  const relayDisabled = pending || isUnavailable(ENTITY.relay);
+  document.querySelectorAll("#relayBits button").forEach((button) => {
+    button.disabled = relayDisabled;
+  });
+}
+
 async function sendCommand(button) {
+  if (state.commandPending) return;
   const command = button.dataset.command;
   const result = $("commandResult");
   result.className = "alert alert-info mb-0";
   result.textContent = `正在执行 ${command}...`;
+  setCommandPending(true);
   try {
     if (state.mode === "demo") {
       await new Promise((resolve) => setTimeout(resolve, 350));
       result.className = "alert alert-success mb-0";
-      result.textContent = `演示命令 ${command} 已执行。`;
+      result.textContent = `演示模式下 ${command} 命令只在本地模拟，未下发到设备。`;
       return;
     }
     const marker = await currentAckMarker();
@@ -422,15 +561,22 @@ async function sendCommand(button) {
   } catch (error) {
     result.className = "alert alert-danger mb-0";
     result.textContent = `执行失败：${error.message}`;
+  } finally {
+    setCommandPending(false);
   }
 }
 
 async function toggleRelay(index) {
+  if (state.commandPending) return;
   const bit = 1 << index;
   const current = numberValue(ENTITY.relay, 0);
   const next = current ^ bit;
   if (state.mode === "demo") {
+    demoRelayMask = next;
     state.latest[ENTITY.relay] = next;
+    const demoResult = $("commandResult");
+    demoResult.className = "alert alert-success mb-0";
+    demoResult.textContent = `演示模式：继电器 ${index + 1} 已${((next >> index) & 1) === 1 ? "吸合" : "断开"}（本地模拟）。`;
     render();
     return;
   }
@@ -438,6 +584,7 @@ async function toggleRelay(index) {
   const result = $("commandResult");
   result.className = "alert alert-info mb-0";
   result.textContent = `正在切换继电器 ${index + 1}...`;
+  setCommandPending(true);
   try {
     const marker = await currentAckMarker();
     await haApi("/api/services/number/set_value", {
@@ -455,6 +602,8 @@ async function toggleRelay(index) {
   } catch (error) {
     result.className = "alert alert-danger mb-0";
     result.textContent = `继电器 ${index + 1} 切换失败：${error.message}`;
+  } finally {
+    setCommandPending(false);
   }
 }
 
@@ -472,7 +621,7 @@ function demoSnapshot() {
   state.latest[ENTITY.supply24] = 24.12 + Math.sin(t / 4) * 0.04;
   state.latest[ENTITY.supply5] = 5.016 + Math.cos(t / 5) * 0.01;
   state.latest[ENTITY.di] = 0b10110101;
-  state.latest[ENTITY.relay] = 0b00101101;
+  state.latest[ENTITY.relay] = demoRelayMask;
   state.latest[ENTITY.fault] = 0;
   state.latest[ENTITY.wdg] = 1430 + t;
   state.latest[ENTITY.alive] = 0x001f;
@@ -539,7 +688,14 @@ $("relayBits").addEventListener("click", (event) => {
 
 createChart();
 refreshIcons();
+setVisible($("chartEmpty"), true);
 restoreSession();
+
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden && state.mode === "real") fetchStates().catch(() => {});
+});
+
 setInterval(() => {
-  if (state.mode === "real") fetchStates().catch(() => {});
+  if (state.mode !== "real" || document.hidden) return;
+  fetchStates().catch(() => {});
 }, 2000);

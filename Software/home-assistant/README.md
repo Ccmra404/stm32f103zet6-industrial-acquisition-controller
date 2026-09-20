@@ -66,6 +66,15 @@ C:\Users\zalry\.codex\.sandbox-secrets\home-assistant-owner.json
 `result = 0` 才提示成功，随后回读继电器掩码确认输出状态；超时或异常码会直接
 显示原因，不会把 Home Assistant 接受请求当成设备已执行。
 
+页面状态处理：
+
+- 网关离线或实体为 `unavailable` 时统一显示 `--` 并给出黄色离线横幅，不再把原始
+  `unavailable` 字符串铺满界面。
+- 遥测表按字段格式化（温度/电压保留两位小数，位图显示十六进制与十进制），时间列
+  使用实体自身 `last_updated`，超过 15 秒未更新会标注“陈旧”。
+- 访问令牌过期时用 `refresh_token` 自动续期，续期失败才回到登录页。
+- 页面隐藏时暂停轮询，重新可见时立即刷新一次。
+
 ## Connect the ESP32
 
 在 ESP32 控制台执行：
