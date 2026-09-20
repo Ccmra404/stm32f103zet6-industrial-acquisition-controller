@@ -7,11 +7,16 @@
 #include "bridge_protocol.h"
 #include "driver/gpio.h"
 #include "driver/uart.h"
+#include "esp_event.h"
 #include "esp_err.h"
 #include "esp_log.h"
+#include "esp_netif.h"
 #include "esp_timer.h"
+#include "esp_wifi.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "mqtt_client.h"
+#include "nvs.h"
 #include "nvs_flash.h"
 
 #define UART_PORT UART_NUM_1
@@ -28,6 +33,16 @@
 #define BRIDGE_COMMAND_TIMEOUT_MS 500U
 #define BRIDGE_COMMAND_MAX_RETRIES 2U
 #define BRIDGE_CONSOLE_LINE_SIZE 96U
+
+#define NETWORK_NVS_NAMESPACE "netcfg"
+#define NETWORK_NVS_SSID "ssid"
+#define NETWORK_NVS_PASSWORD "password"
+#define NETWORK_NVS_BROKER "broker"
+#define NETWORK_SSID_SIZE 33U
+#define NETWORK_PASSWORD_SIZE 65U
+#define NETWORK_BROKER_SIZE 128U
+#define NETWORK_TELEMETRY_TOPIC "industrial/telemetry"
+#define NETWORK_PUBLISH_PERIOD_MS 2000U
 
 typedef struct
 {
@@ -51,6 +66,23 @@ static QueueHandle_t s_command_queue;
 static QueueHandle_t s_ack_queue;
 static uint16_t s_command_sequence;
 static uint16_t s_request_id;
+
+static esp_mqtt_client_handle_t s_mqtt_client;
+static char s_wifi_ssid[NETWORK_SSID_SIZE];
+static char s_wifi_password[NETWORK_PASSWORD_SIZE];
+static char s_mqtt_broker[NETWORK_BROKER_SIZE];
+static volatile bool s_wifi_connected;
+static volatile bool s_mqtt_connected;
+static volatile bool s_network_reload;
+
+static void NetworkWifiEventHandler(void *argument,
+                                    esp_event_base_t event_base,
+                                    int32_t event_id,
+                                    void *event_data);
+static void NetworkMqttEventHandler(void *argument,
+                                    esp_event_base_t event_base,
+                                    int32_t event_id,
+                                    void *event_data);
 
 static void SendFrame(const uint8_t *frame, uint16_t length)
 {
@@ -342,6 +374,288 @@ static void PrintStatus(void)
            (unsigned long)diagnostics.event_queue_dropped,
            (unsigned long)diagnostics.watchdog_refresh_count);
   }
+  printf("WiFi: %s SSID=%s\n",
+         s_wifi_connected ? "connected" : "disconnected",
+         (s_wifi_ssid[0] != '\0') ? s_wifi_ssid : "(not configured)");
+  printf("MQTT: %s broker=%s\n",
+         s_mqtt_connected ? "connected" : "disconnected",
+         (s_mqtt_broker[0] != '\0') ? s_mqtt_broker : "(not configured)");
+}
+
+static void NetworkLoadConfig(void)
+{
+  nvs_handle_t handle;
+  size_t length;
+
+  memset(s_wifi_ssid, 0, sizeof(s_wifi_ssid));
+  memset(s_wifi_password, 0, sizeof(s_wifi_password));
+  memset(s_mqtt_broker, 0, sizeof(s_mqtt_broker));
+
+  if (nvs_open(NETWORK_NVS_NAMESPACE, NVS_READONLY, &handle) != ESP_OK)
+  {
+    return;
+  }
+
+  length = sizeof(s_wifi_ssid);
+  (void)nvs_get_str(handle, NETWORK_NVS_SSID, s_wifi_ssid, &length);
+  length = sizeof(s_wifi_password);
+  (void)nvs_get_str(handle, NETWORK_NVS_PASSWORD, s_wifi_password, &length);
+  length = sizeof(s_mqtt_broker);
+  (void)nvs_get_str(handle, NETWORK_NVS_BROKER, s_mqtt_broker, &length);
+  nvs_close(handle);
+}
+
+static void NetworkSaveWifi(const char *ssid, const char *password)
+{
+  nvs_handle_t handle;
+
+  if ((ssid == NULL) || (password == NULL))
+  {
+    return;
+  }
+
+  if (nvs_open(NETWORK_NVS_NAMESPACE, NVS_READWRITE, &handle) != ESP_OK)
+  {
+    printf("NVS open failed\n");
+    return;
+  }
+
+  (void)nvs_set_str(handle, NETWORK_NVS_SSID, ssid);
+  (void)nvs_set_str(handle, NETWORK_NVS_PASSWORD, password);
+  (void)nvs_commit(handle);
+  nvs_close(handle);
+  s_network_reload = true;
+  printf("WiFi config saved, reconnecting\n");
+}
+
+static void NetworkSaveBroker(const char *uri)
+{
+  nvs_handle_t handle;
+
+  if (uri == NULL)
+  {
+    return;
+  }
+
+  if (nvs_open(NETWORK_NVS_NAMESPACE, NVS_READWRITE, &handle) != ESP_OK)
+  {
+    printf("NVS open failed\n");
+    return;
+  }
+
+  (void)nvs_set_str(handle, NETWORK_NVS_BROKER, uri);
+  (void)nvs_commit(handle);
+  nvs_close(handle);
+  s_network_reload = true;
+  printf("MQTT broker saved\n");
+}
+
+static void NetworkStartMqtt(void)
+{
+  esp_mqtt_client_config_t mqtt_config = {
+      .broker.address.uri = s_mqtt_broker,
+  };
+
+  if ((s_mqtt_broker[0] == '\0') || (s_mqtt_client != NULL))
+  {
+    return;
+  }
+
+  s_mqtt_client = esp_mqtt_client_init(&mqtt_config);
+  if (s_mqtt_client == NULL)
+  {
+    ESP_LOGE(TAG, "MQTT client init failed");
+    return;
+  }
+
+  ESP_ERROR_CHECK(esp_mqtt_client_register_event(s_mqtt_client,
+                                                 ESP_EVENT_ANY_ID,
+                                                 NetworkMqttEventHandler,
+                                                 NULL));
+  ESP_ERROR_CHECK(esp_mqtt_client_start(s_mqtt_client));
+}
+
+static void NetworkStopMqtt(void)
+{
+  if (s_mqtt_client == NULL)
+  {
+    return;
+  }
+
+  (void)esp_mqtt_client_stop(s_mqtt_client);
+  (void)esp_mqtt_client_destroy(s_mqtt_client);
+  s_mqtt_client = NULL;
+  s_mqtt_connected = false;
+}
+
+static void NetworkApplyConfig(void)
+{
+  NetworkLoadConfig();
+  NetworkStopMqtt();
+
+  if (s_wifi_ssid[0] != '\0')
+  {
+    wifi_config_t wifi_config = {0};
+
+    strncpy((char *)wifi_config.sta.ssid, s_wifi_ssid, sizeof(wifi_config.sta.ssid) - 1U);
+    strncpy((char *)wifi_config.sta.password,
+            s_wifi_password,
+            sizeof(wifi_config.sta.password) - 1U);
+    wifi_config.sta.threshold.authmode =
+        (s_wifi_password[0] == '\0') ? WIFI_AUTH_OPEN : WIFI_AUTH_WPA2_PSK;
+    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
+    (void)esp_wifi_disconnect();
+    (void)esp_wifi_connect();
+  }
+  else
+  {
+    (void)esp_wifi_disconnect();
+  }
+
+  s_network_reload = false;
+}
+
+static void NetworkWifiEventHandler(void *argument,
+                                    esp_event_base_t event_base,
+                                    int32_t event_id,
+                                    void *event_data)
+{
+  (void)argument;
+  (void)event_data;
+
+  if ((event_base == WIFI_EVENT) && (event_id == WIFI_EVENT_STA_START))
+  {
+    if (s_wifi_ssid[0] != '\0')
+    {
+      (void)esp_wifi_connect();
+    }
+  }
+  else if ((event_base == WIFI_EVENT) && (event_id == WIFI_EVENT_STA_DISCONNECTED))
+  {
+    s_wifi_connected = false;
+    s_mqtt_connected = false;
+    if (s_wifi_ssid[0] != '\0')
+    {
+      (void)esp_wifi_connect();
+    }
+  }
+  else if ((event_base == IP_EVENT) && (event_id == IP_EVENT_STA_GOT_IP))
+  {
+    s_wifi_connected = true;
+    ESP_LOGI(TAG, "WiFi connected");
+  }
+}
+
+static void NetworkMqttEventHandler(void *argument,
+                                    esp_event_base_t event_base,
+                                    int32_t event_id,
+                                    void *event_data)
+{
+  (void)argument;
+  (void)event_base;
+  (void)event_data;
+
+  if (event_id == MQTT_EVENT_CONNECTED)
+  {
+    s_mqtt_connected = true;
+    ESP_LOGI(TAG, "MQTT connected");
+  }
+  else if (event_id == MQTT_EVENT_DISCONNECTED)
+  {
+    s_mqtt_connected = false;
+    ESP_LOGW(TAG, "MQTT disconnected");
+  }
+  else if (event_id == MQTT_EVENT_ERROR)
+  {
+    ESP_LOGE(TAG, "MQTT error");
+  }
+}
+
+static void NetworkPublishTelemetry(void)
+{
+  BridgeProtocolTelemetry telemetry;
+  BridgeProtocolDiagnostics diagnostics;
+  bool diagnostics_valid;
+  char payload[512];
+  int position = 0;
+
+  if ((s_mqtt_client == NULL) || !s_mqtt_connected)
+  {
+    return;
+  }
+
+  portENTER_CRITICAL(&s_state_lock);
+  telemetry = s_telemetry;
+  diagnostics = s_diagnostics;
+  diagnostics_valid = s_diagnostics_valid;
+  portEXIT_CRITICAL(&s_state_lock);
+
+  position += snprintf(&payload[position],
+                       sizeof(payload) - (size_t)position,
+                       "{\"ai_raw\":[");
+  for (uint8_t index = 0U; index < 8U; index++)
+  {
+    position += snprintf(&payload[position],
+                         sizeof(payload) - (size_t)position,
+                         "%s%ld",
+                         (index == 0U) ? "" : ",",
+                         (long)telemetry.ai_raw[index]);
+  }
+  position += snprintf(&payload[position],
+                       sizeof(payload) - (size_t)position,
+                       "],\"rtd_mc\":%ld,\"di\":%u,\"relay\":%u,"
+                       "\"supply_mv\":[%u,%u],\"fault\":%u",
+                       (long)telemetry.rtd_millicelsius,
+                       telemetry.di_bits,
+                       telemetry.relay_bits,
+                       telemetry.supply_mv[0],
+                       telemetry.supply_mv[1],
+                       telemetry.fault_bits);
+  if (diagnostics_valid)
+  {
+    position += snprintf(&payload[position],
+                         sizeof(payload) - (size_t)position,
+                         ",\"alive\":%lu,\"wdg\":%lu",
+                         (unsigned long)diagnostics.task_alive_bits,
+                         (unsigned long)diagnostics.watchdog_refresh_count);
+  }
+  (void)snprintf(&payload[position],
+                 sizeof(payload) - (size_t)position,
+                 "}");
+  (void)esp_mqtt_client_publish(s_mqtt_client,
+                                NETWORK_TELEMETRY_TOPIC,
+                                payload,
+                                0,
+                                0,
+                                0);
+}
+
+static void NetworkTask(void *argument)
+{
+  TickType_t last_publish = 0U;
+
+  (void)argument;
+
+  for (;;)
+  {
+    if (s_network_reload)
+    {
+      NetworkApplyConfig();
+    }
+
+    if (s_wifi_connected && (s_mqtt_client == NULL))
+    {
+      NetworkStartMqtt();
+    }
+
+    if ((xTaskGetTickCount() - last_publish) >= pdMS_TO_TICKS(NETWORK_PUBLISH_PERIOD_MS))
+    {
+      NetworkPublishTelemetry();
+      last_publish = xTaskGetTickCount();
+    }
+
+    vTaskDelay(pdMS_TO_TICKS(1000U));
+  }
 }
 
 static void ConsoleTask(void *argument)
@@ -387,6 +701,9 @@ static void ConsoleTask(void *argument)
       printf("clear <mask>        clear latched faults\n");
       printf("save | load         store or restore configuration\n");
       printf("status              print cached STM32 state\n");
+      printf("wifi <ssid> <pass>  save WiFi credentials and reconnect\n");
+      printf("mqtt <uri>          save MQTT broker URI\n");
+      printf("reconnect           apply saved network configuration\n");
     }
     else if (strcmp(command, "status") == 0)
     {
@@ -421,6 +738,21 @@ static void ConsoleTask(void *argument)
     else if (strcmp(command, "load") == 0)
     {
       (void)SubmitCommand(BRIDGE_CMD_LOAD_CONFIG, 0U, 0U, 0U);
+    }
+    else if ((strcmp(command, "wifi") == 0) &&
+             (argument1 != NULL) &&
+             (argument2 != NULL))
+    {
+      NetworkSaveWifi(argument1, (strcmp(argument2, "-") == 0) ? "" : argument2);
+    }
+    else if ((strcmp(command, "mqtt") == 0) && (argument1 != NULL))
+    {
+      NetworkSaveBroker(argument1);
+    }
+    else if (strcmp(command, "reconnect") == 0)
+    {
+      s_network_reload = true;
+      printf("network reconnect requested\n");
     }
     else
     {
@@ -496,6 +828,27 @@ void app_main(void)
   setvbuf(stdout, NULL, _IONBF, 0);
 
   ESP_ERROR_CHECK(nvs_flash_init());
+  ESP_ERROR_CHECK(esp_netif_init());
+  ESP_ERROR_CHECK(esp_event_loop_create_default());
+  (void)esp_netif_create_default_wifi_sta();
+
+  wifi_init_config_t wifi_init_config = WIFI_INIT_CONFIG_DEFAULT();
+  ESP_ERROR_CHECK(esp_wifi_init(&wifi_init_config));
+  ESP_ERROR_CHECK(esp_event_handler_instance_register(WIFI_EVENT,
+                                                      ESP_EVENT_ANY_ID,
+                                                      NetworkWifiEventHandler,
+                                                      NULL,
+                                                      NULL));
+  ESP_ERROR_CHECK(esp_event_handler_instance_register(IP_EVENT,
+                                                      IP_EVENT_STA_GOT_IP,
+                                                      NetworkWifiEventHandler,
+                                                      NULL,
+                                                      NULL));
+  ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
+  ESP_ERROR_CHECK(esp_wifi_start());
+
+  NetworkLoadConfig();
+  s_network_reload = true;
 
   uart_config_t config = {
       .baud_rate = UART_BAUD_RATE,
@@ -521,5 +874,6 @@ void app_main(void)
   xTaskCreate(UartRxTask, "uart_rx", 4096, NULL, 8, NULL);
   xTaskCreate(HeartbeatTask, "heartbeat", 3072, NULL, 6, NULL);
   xTaskCreate(CommandRouterTask, "command_router", 3072, NULL, 6, NULL);
+  xTaskCreate(NetworkTask, "network", 4096, NULL, 5, NULL);
   xTaskCreate(ConsoleTask, "console", 4096, NULL, 4, NULL);
 }

@@ -14,7 +14,7 @@ Firmware/
 | 处理器 | 职责 |
 | --- | --- |
 | STM32F103ZET6 | ADS1256、MAX31865、数字输入、继电器、DAC、EEPROM、CAN、RS485 和 RS232 |
-| ESP32-S3 | UART 桥接、状态缓存和命令入口；WiFi 与网络服务为扩展接口 |
+| ESP32-S3 | UART 桥接、状态缓存、命令入口、WiFi 和 MQTT 遥测 |
 
 STM32 始终负责硬实时路径。扩展应用层通过 ESP32-S3 下发命令，ESP32-S3 不直接操作 STM32 GPIO。
 
@@ -90,6 +90,7 @@ ESP32-S3 当前固件包含：
 - STM32 在线和超时检测
 - 命令队列、ACK 匹配、500 ms 超时和自动重试
 - UART0 控制台命令
+- WiFi Station、NVS 网络配置和 MQTT JSON 遥测
 
 控制台命令：
 
@@ -101,7 +102,12 @@ clear <fault-mask>
 save
 load
 status
+wifi <ssid> <password>
+mqtt <uri>
+reconnect
 ```
+
+ESP-IDF 6.1 的 MQTT 组件由 `Firmware/esp32/main/idf_component.yml` 管理，首次构建会下载 `espressif/mqtt`。
 
 LCD 和音频模块属于可选外设，当前固件不初始化它们，也不在 HELLO 能力位中声明。
 

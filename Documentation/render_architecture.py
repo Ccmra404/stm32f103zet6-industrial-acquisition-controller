@@ -577,21 +577,22 @@ def software_architecture():
 
     add_rect(parts, 1146, 176, 592, 750, COLORS["teal_fill"], radius=24)
     add_text(parts, 1176, 222, "ESP32-S3 桥接固件", 32, COLORS["teal"], weight=500)
-    add_text(parts, 1176, 255, "ESP-IDF 6.1 + FreeRTOS", 18, COLORS["muted"])
+    add_text(parts, 1176, 255, "ESP-IDF 6.1 + FreeRTOS + WiFi/MQTT", 18, COLORS["muted"])
 
     esp_tasks = [
         ("07", "uart_rx", "优先级 8，读取 UART1 并逐字节解析"),
         ("08", "heartbeat", "优先级 6，发送 HELLO 和心跳，判断 3 秒离线"),
         ("09", "command_router", "优先级 6，UART0 控制台、ACK 匹配和超时重试"),
+        ("10", "network", "优先级 5，WiFi 连接、MQTT JSON 遥测和 NVS 配置"),
     ]
-    y = 282
+    y = 270
     for index, title, detail in esp_tasks:
-        add_rect(parts, 1174, y, 536, 94, COLORS["white"], COLORS["line"], 14)
-        add_rect(parts, 1174, y, 7, 94, COLORS["teal"], radius=3)
-        add_text(parts, 1200, y + 32, index, 15, COLORS["teal"], weight=500, font=MONO)
-        add_text(parts, 1248, y + 33, title, 22, COLORS["ink"], weight=500, font=MONO)
-        add_text(parts, 1200, y + 66, detail, 17, COLORS["muted"])
-        y += 108
+        add_rect(parts, 1174, y, 536, 72, COLORS["white"], COLORS["line"], 14)
+        add_rect(parts, 1174, y, 7, 72, COLORS["teal"], radius=3)
+        add_text(parts, 1200, y + 29, index, 15, COLORS["teal"], weight=500, font=MONO)
+        add_text(parts, 1248, y + 30, title, 22, COLORS["ink"], weight=500, font=MONO)
+        add_text(parts, 1200, y + 57, detail, 17, COLORS["muted"])
+        y += 76
 
     add_rect(parts, 1174, 618, 536, 122, COLORS["white"], COLORS["line"], 16)
     add_text(parts, 1200, 655, "状态与命令数据", 23, COLORS["ink"], weight=500)
@@ -600,8 +601,8 @@ def software_architecture():
 
     add_rect(parts, 1174, 762, 536, 130, COLORS["white"], COLORS["line"], 16)
     add_text(parts, 1200, 799, "后续应用扩展点", 23, COLORS["violet"], weight=500)
-    add_text(parts, 1200, 832, "WiFi / MQTT / OTA / LCD / 音频", 18, COLORS["muted"])
-    add_text(parts, 1200, 866, "当前固件只建立桥接入口，不启动这些模块。", 17, COLORS["muted"])
+    add_text(parts, 1200, 832, "WebSocket / OTA / LCD / 音频", 18, COLORS["muted"])
+    add_text(parts, 1200, 866, "WiFi 与 MQTT 已实现，其余保留为扩展点。", 17, COLORS["muted"])
 
     add_line(parts, 752, 500, 786, 500, COLORS["violet"], 5, marker=True)
     add_line(parts, 1112, 500, 1146, 500, COLORS["violet"], 5, marker=True)
@@ -699,7 +700,7 @@ def software_task_flow():
         ("采集与控制任务", COLORS["blue"], ["controlTask 5ms", "acqTask 100ms", "rtdTask 500ms", "monitorTask 50ms", "modbusTask 2ms"]),
         ("状态快照", COLORS["violet"], ["device_state", "mutex 加锁", "DeviceState_Get()", "一致副本"]),
         ("协议桥接", COLORS["teal"], ["bridgeTask", "HEARTBEAT 1s", "TELEMETRY 100ms", "EVENT 队列"]),
-        ("ESP32-S3", COLORS["teal"], ["console command", "command_router + ACK", "uart_rx  priority 8", "heartbeat  priority 6"]),
+        ("ESP32-S3", COLORS["teal"], ["console command", "command_router + ACK", "uart_rx  priority 8", "heartbeat  priority 6", "network + MQTT"]),
     ]
     x = 94
     for title, color, lines in path_cards:

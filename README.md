@@ -1,7 +1,7 @@
 # 基于 STM32F103ZET6 与 ESP32-S3 的工业采集控制终端
 
 <p align="center">
-  <strong>STM32 负责实时采集与控制，ESP32-S3 负责桥接与远程服务扩展</strong>
+  <strong>STM32 负责实时采集与控制，ESP32-S3 负责桥接、联网和远程服务</strong>
 </p>
 
 <p align="center">
@@ -34,7 +34,7 @@
 | 层面 | 当前实现 |
 | --- | --- |
 | 实时软件 | FreeRTOS 1 ms tick、抢占式调度、CMSIS-RTOS V2、6 个业务任务、任务活性监督、IWDG、ADC DMA、UART DMA 空闲接收和继电器脉冲定时器 |
-| 桥接软件 | UART1 字节流解析、HELLO、HEARTBEAT、TELEMETRY、EVENT、COMMAND、COMMAND_ACK、命令队列、ACK 重试和串口控制台 |
+| 桥接软件 | UART1 解析、命令队列、ACK 重试、串口控制台、WiFi Station 和 MQTT 遥测发布 |
 | 通信协议 | `AA 55` 帧头、版本、消息类型、序号、长度、256 字节载荷和 CRC-16 |
 | 状态管理 | `device_state` 统一保存设备快照，使用 mutex 保证任务读取一致性 |
 | 采集控制 | 8 路 24 位模拟采集、PT100 或 PT1000 温度采集、8 路隔离数字输入、8 路继电器和 2 路模拟输出 |
@@ -46,6 +46,7 @@
 
 - STM32 实时采集、控制、状态发布、事件上报和命令处理。
 - ESP32-S3 遥测接收、状态缓存、心跳发送、在线判断、命令队列和 ACK 重试。
+- ESP32-S3 通过 WiFi 连接 MQTT Broker，每 2 秒发布一次 JSON 遥测。
 - 继电器掩码、继电器脉冲、模拟输出、故障清除和配置保存命令。
 - EEPROM 参数结构包含 `magic`、`version` 和 `crc`，校验失败时回退默认值。
 - STM32 保存最近 16 条命令结果，重复请求不会再次执行输出。
@@ -54,7 +55,7 @@
 
 保留的扩展入口：
 
-- ESP32-S3 的 WiFi、MQTT、WebSocket、OTA 和远程配置。
+- ESP32-S3 的 WebSocket、OTA 和远程参数服务。
 - LCD、音频和本地人机界面。
 
 ## 软件系统
@@ -65,7 +66,7 @@
 
 <p align="center">
   <a href="Documentation/images/sw-architecture.webp">
-    <img src="https://cdn.jsdelivr.net/gh/Ccmra404/stm32f103zet6-industrial-acquisition-controller@main/Documentation/images/sw-architecture.webp?v=modbus2" width="100%" alt="软件系统架构图">
+    <img src="https://cdn.jsdelivr.net/gh/Ccmra404/stm32f103zet6-industrial-acquisition-controller@main/Documentation/images/sw-architecture.webp?v=network1" width="100%" alt="软件系统架构图">
   </a>
 </p>
 
@@ -86,7 +87,7 @@ STM32 使用 FreeRTOS 和 CMSIS-RTOS V2。系统节拍为 `1 ms`，开启抢占�
 
 <p align="center">
   <a href="Documentation/images/sw-task-flow.webp">
-    <img src="https://cdn.jsdelivr.net/gh/Ccmra404/stm32f103zet6-industrial-acquisition-controller@main/Documentation/images/sw-task-flow.webp?v=modbus2" width="100%" alt="FreeRTOS 调度和任务通信图">
+    <img src="https://cdn.jsdelivr.net/gh/Ccmra404/stm32f103zet6-industrial-acquisition-controller@main/Documentation/images/sw-task-flow.webp?v=network1" width="100%" alt="FreeRTOS 调度和任务通信图">
   </a>
 </p>
 
@@ -153,7 +154,16 @@ clear <fault-mask>
 save
 load
 status
+wifi <ssid> <password>
+mqtt <uri>
+reconnect
 ```
+
+### WiFi 与 MQTT
+
+WiFi 凭据和 MQTT Broker 地址通过控制台写入 NVS，不进入仓库。MQTT 连接成功后，网络任务向 `industrial/telemetry` 发布 AI、RTD、DI、继电器、电源、故障和任务诊断数据。
+
+配置方法和 JSON 字段见 [WiFi 与 MQTT](Software/NETWORK.md)。
 
 ### 状态一致性
 
@@ -285,6 +295,7 @@ STM32 通过 RS485 提供 Modbus RTU 从站，从站地址为 `1`。支持 `0x03
 | ESP32-S3 | ESP-IDF 6.1 | `Firmware/esp32` | Build complete |
 | 共享协议 | GCC | `Firmware/tests/protocol_test.c` | GitHub Actions 自动测试 |
 | Modbus RTU | GCC | `Firmware/tests/modbus_test.c` | GitHub Actions 自动测试 |
+| ESP32 组件 | IDF Component Manager | `Firmware/esp32/main/idf_component.yml` | MQTT 1.1.0 |
 
 构建 STM32 固件：
 
@@ -314,6 +325,7 @@ Software/
   README.md            软件架构和任务设计
   PROTOCOL.md          消息字段、命令和错误码
   MODBUS.md            RS485 寄存器映射和异常响应
+  NETWORK.md           WiFi、MQTT 和遥测 JSON
 Documentation/
   images/              软件架构、硬件架构、PCB 和原理图
 ```
@@ -401,7 +413,7 @@ Documentation/
 
 ## 后续方向
 
-- 接入 WiFi、MQTT、WebSocket 和 OTA，完成远程状态发布与固件升级。
+- 接入 WebSocket 和 OTA，完成远程参数服务与固件升级。
 - 增加 LCD 状态页、报警页和参数配置页。
 - 完成 ADS1256、MAX31865 和模拟输出的实板标定。
 - 增加 Modbus RTU 主站轮询和更多现场设备寄存器映射。
@@ -415,6 +427,7 @@ Documentation/
 | [软件架构](Software/README.md) | STM32、ESP32-S3、任务划分和模块接口 |
 | [板间协议](Software/PROTOCOL.md) | UART 帧、消息类型、命令和错误码 |
 | [Modbus RTU 从站](Software/MODBUS.md) | RS485 寄存器映射、功能码和异常响应 |
+| [WiFi 与 MQTT](Software/NETWORK.md) | 网络配置、MQTT 主题和遥测 JSON |
 | [CubeMX 配置清单](Software/CUBEMX.md) | 时钟、外设、GPIO、DMA 和 FreeRTOS 配置 |
 | [固件说明](Firmware/README.md) | 两套固件的构建、接线和功能范围 |
 | [协议测试](Firmware/tests/README.md) | 主机侧帧编解码、CRC 和异常路径测试 |
